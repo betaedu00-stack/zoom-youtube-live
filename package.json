@@ -1,0 +1,14 @@
+{
+  "name": "zoom-live-stream",
+  "version": "1.0.0",
+  "description": "Zoom meeting to YouTube Live",
+  "main": "zoom.js",
+  "scripts": {
+    "start": "node zoom.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^22.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}
