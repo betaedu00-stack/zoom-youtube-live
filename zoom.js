@@ -4,10 +4,7 @@ puppeteer.use(StealthPlugin());
 
 async function run() {
     const zoomUrl = process.env.ZOOM_URL;
-    if (!zoomUrl) {
-        console.error("ZOOM_URL is missing!");
-        process.exit(1);
-    }
+    if (!zoomUrl) { process.exit(1); }
 
     const browser = await puppeteer.launch({
         headless: false,
@@ -19,71 +16,68 @@ async function run() {
             '--window-size=1920,1080',
             '--start-maximized'
         ],
-        defaultViewport: null
+        defaultViewport: { width: 1920, height: 1080 }
     });
 
     const page = await browser.newPage();
-    
-    // Web Client එකට ලින්ක් එක හැරවීම
     let targetUrl = zoomUrl.replace('/j/', '/wc/join/');
 
-    console.log("Navigating to Zoom Web Client...");
-    await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
+    console.log("Navigating to Zoom...");
+    await page.goto(targetUrl, { waitUntil: 'networkidle2' });
 
     try {
-        // 1. නම ඇතුළත් කරන කොටුව එනතෙක් රැඳී සිටීම
-        console.log("Searching for name input field...");
-        await page.waitForSelector('input', { visible: true, timeout: 60000 });
+        // 1. පිටුව ලෝඩ් වන තෙක් තත්පර 15ක් රැඳී සිටීම
+        await new Promise(r => setTimeout(r, 15000));
 
-        // 2. සියලුම input fields අතරින් නම ඇතුළත් කළ යුතු එක සොයා ගැනීම
+        // 2. නම ඇතුළත් කරන කොටුව "Focus" කිරීමට Tab Key එක භාවිතා කිරීම
+        // මෙය selector එකක් නැතත් වැඩ කරන ක්‍රමයකි
+        console.log("Attempting to focus and type name...");
+        
+        // මුලින්ම පිටුවේ මැදට ක්ලික් කරන්න (input එක ඇති ප්‍රදේශය)
+        await page.mouse.click(960, 490); 
+        await new Promise(r => setTimeout(r, 1000));
+
+        // සියලුම දත්ත මකා (Select All + Backspace) නම ටයිප් කිරීම
+        await page.keyboard.down('Control');
+        await page.keyboard.press('A');
+        await page.keyboard.up('Control');
+        await page.keyboard.press('Backspace');
+        
+        await page.keyboard.type('β Edu Live', { delay: 150 });
+        console.log("Name typed via Keyboard Simulation.");
+
+        // 3. Enter Key එක එබීම (Join Button එක එබීමට සමානයි)
+        await page.keyboard.press('Enter');
+        await new Promise(r => setTimeout(r, 2000));
+        await page.keyboard.press('Enter'); // තහවුරු කිරීමට දෙපාරක්
+        console.log("Enter pressed.");
+
+        // 4. අමතරව "Join" බටන් එක හමු වුවහොත් එය ක්ලික් කිරීම
         await page.evaluate(() => {
-            const inputs = Array.from(document.querySelectorAll('input'));
-            // නම ඇතුළත් කරන කොටුව බොහෝ විට පළමු text input එකයි
-            const nameField = inputs.find(i => i.type === 'text' || i.id === 'inputname' || i.name === 'name');
-            if (nameField) {
-                nameField.value = 'β Edu Live';
-                // සැබෑ ලෙසම ටයිප් කළාක් මෙන් පෙන්වීමට events trigger කිරීම
-                nameField.dispatchEvent(new Event('input', { bubbles: true }));
-                nameField.dispatchEvent(new Event('change', { bubbles: true }));
-                console.log("Name value set via JS.");
-            }
+            const btns = Array.from(document.querySelectorAll('button'));
+            const join = btns.find(b => b.innerText.includes('Join'));
+            if (join) join.click();
         });
 
-        // අමතර ආරක්ෂාවට Puppeteer මගිනුත් ටයිප් කරමු
-        await page.type('input', 'β Edu Live');
-        console.log("Typed name via Puppeteer.");
-
-        // 3. Join Button එක එබීම
-        console.log("Searching for Join button...");
-        await page.evaluate(() => {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            const joinBtn = buttons.find(b => b.innerText.includes('Join') || b.classList.contains('join-btn'));
-            if (joinBtn) {
-                joinBtn.click();
-                console.log("Join button clicked via JS.");
-            }
-        });
-
-        // 4. UI Clean-up (Watermarks මැකීම)
-        // මීටින් එකට ලොග් වී ටික වෙලාවකින් මෙය ක්‍රියාත්මක වේ
+        // 5. Watermarks මැකීම (Loop එකක් ලෙස)
         setInterval(async () => {
             try {
-                await page.addStyleTag({
-                    content: `
-                        .meeting-app__watermark, .recording-label, 
-                        #onetrust-consent-sdk, .zm-modal, .modal-dialog,
-                        .full-screen-widget { 
-                            display: none !important; 
-                            opacity: 0 !important;
-                        }
-                    `
+                await page.evaluate(() => {
+                    const selectors = [
+                        '.meeting-app__watermark', '.recording-label', 
+                        '#onetrust-consent-sdk', '.zm-modal', 
+                        '.modal-dialog', '.full-screen-widget'
+                    ];
+                    selectors.forEach(s => {
+                        const el = document.querySelector(s);
+                        if (el) el.style.display = 'none';
+                    });
                 });
             } catch (e) {}
-        }, 10000);
+        }, 5000);
 
     } catch (error) {
-        console.error("Critical Error during automation:", error.message);
-        await page.screenshot({ path: 'error_screenshot.png' });
+        console.error("Error:", error);
     }
 }
 
