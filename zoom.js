@@ -3,48 +3,58 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 async function run() {
-    console.log("Launching System Chrome...");
+    console.log("Checking Environment...");
+    const zoomUrl = process.env.ZOOM_URL;
+
+    if (!zoomUrl || zoomUrl === "") {
+        console.error("CRITICAL ERROR: ZOOM_URL secret is missing or empty!");
+        process.exit(1);
+    }
+
+    console.log("Launching Browser...");
     try {
         const browser = await puppeteer.launch({
             headless: false,
-            executablePath: '/usr/bin/google-chrome', // Ubuntu එකේ තියෙන Chrome එක
+            executablePath: '/usr/bin/google-chrome',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-gpu',
                 '--start-maximized',
-                '--window-size=1920,1080',
-                '--autoplay-policy=no-user-gesture-required'
+                '--window-size=1920,1080'
             ],
             defaultViewport: null
         });
 
         const page = await browser.newPage();
-        let zoomUrl = process.env.ZOOM_URL;
         
-        if (zoomUrl.includes('/j/')) {
-            zoomUrl = zoomUrl.replace('/j/', '/wc/join/');
+        // URL එක සකස් කිරීම
+        let targetUrl = zoomUrl;
+        if (targetUrl.includes('/j/')) {
+            targetUrl = targetUrl.replace('/j/', '/wc/join/');
         }
 
-        console.log("Navigating to Zoom...");
-        await page.goto(zoomUrl, { waitUntil: 'networkidle2', timeout: 90000 });
+        console.log("Navigating to:", targetUrl);
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // Join Screen එක එනකම් ඉන්න
-        await page.waitForSelector('#inputname', { timeout: 30000 });
+        // නම ඇතුළත් කිරීම
+        console.log("Waiting for input name field...");
+        await page.waitForSelector('#inputname', { timeout: 45000 });
         await page.type('#inputname', 'β Edu Live');
+        
         await page.click('.u-btn.join-btn');
-        console.log("Join button clicked.");
+        console.log("Join button clicked. Waiting for meeting...");
 
-        // මීටින් එක ඇතුළත UI සැකසීම
+        // UI පිරිසිදු කිරීම (තත්පර 30කට පසු)
         setTimeout(async () => {
             await page.addStyleTag({
-                content: '.meeting-app__watermark, .recording-label { display: none !important; }'
+                content: '.meeting-app__watermark, .recording-label, #onetrust-consent-sdk { display: none !important; }'
             });
-            console.log("Watermarks hidden.");
-        }, 20000);
+            console.log("UI Cleaned.");
+        }, 30000);
 
     } catch (error) {
-        console.error("CRITICAL ERROR:", error);
+        console.error("BROWSER ERROR:", error.message);
     }
 }
 
