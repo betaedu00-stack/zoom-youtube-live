@@ -3,81 +3,88 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 async function run() {
+    console.log("Starting Browser...");
     const browser = await puppeteer.launch({
-        headless: false, // Xvfb හරහා ක්‍රියාත්මක වේ
+        headless: false,
+        executablePath: '/usr/bin/google-chrome', // Stable Chrome භාවිතා කිරීම
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-gpu',
             '--disable-dev-shm-usage',
+            '--start-maximized',
             '--window-size=1920,1080',
+            '--autoplay-policy=no-user-gesture-required',
             '--use-fake-ui-for-media-stream',
-            '--use-fake-device-for-media-stream',
-            '--autoplay-policy=no-user-gesture-required'
+            '--use-fake-device-for-media-stream'
         ],
-        defaultViewport: { width: 1920, height: 1080 }
+        defaultViewport: null
     });
 
     const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
 
-    // Zoom Meeting URL එක සකසා ගැනීම
     let zoomUrl = process.env.ZOOM_URL;
-    // 'Join from Browser' ලින්ක් එකට සෘජුවම යාම
     if (zoomUrl.includes('/j/')) {
         zoomUrl = zoomUrl.replace('/j/', '/wc/join/');
     }
 
-    console.log("Navigating to Zoom...");
-    await page.goto(zoomUrl, { waitUntil: 'networkidle2' });
-
+    console.log("Navigating to Zoom: " + zoomUrl);
+    
     try {
-        // මීටින් එකට සම්බන්ධ වීමට නම ඇතුළත් කිරීම
-        await page.waitForSelector('#inputname', { timeout: 20000 });
-        await page.type('#inputname', 'β Edu Live');
+        await page.goto(zoomUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        
+        // කුකීස් හෝ වෙනත් Popups මැකීම
+        await page.addStyleTag({ content: '#onetrust-consent-sdk { display: none !important; }' });
+
+        // නම ඇතුළත් කිරීම
+        console.log("Waiting for Join Input...");
+        await page.waitForSelector('#inputname', { timeout: 30000 });
+        await page.type('#inputname', 'β Edu Live Stream');
         
         // Join Button එක එබීම
         await page.click('.u-btn.join-btn');
-        console.log("Joined Meeting Room.");
+        console.log("Join Button Clicked.");
 
-        // මීටින් එක සම්පූර්ණයෙන් ලෝඩ් වන තෙක් රැඳී සිටීම
+        // මීටින් එක ඇතුළට යන තෙක් රැඳී සිටීම
         await page.waitForTimeout(15000);
 
-        // 1. Watermarks සහ UI Elements මැකීම (CSS Injection)
+        // Watermarks සහ අනවශ්‍ය දේවල් CSS මගින් සැඟවීම
         await page.addStyleTag({
             content: `
                 .meeting-app__watermark, .recording-label, .participant-id-label, 
-                .zm-audio-status-indicator, .audio-watermark { 
+                .zm-audio-status-indicator, .audio-watermark, .full-screen-widget { 
                     display: none !important; 
                     opacity: 0 !important;
                 }
+                body { overflow: hidden !important; }
             `
         });
 
-        // 2. Procedural Audio Generation (Copyright ගැටලු නැති කිරීමට)
-        // මෙහිදී බ්‍රව්සරය තුළ ඉතා සියුම් Harmonic ශබ්දයක් නිපදවයි
+        // Procedural Audio (Copyright වැළැක්වීමට සියුම් හඬක් නිපදවීම)
         await page.evaluate(() => {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             setInterval(() => {
-                const oscillator = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(220 + Math.random() * 10, audioCtx.currentTime); 
-                gainNode.gain.setValueAtTime(0.005, audioCtx.currentTime); // ඉතා සියුම් ශබ්දයක්
-                oscillator.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-                oscillator.start();
-                oscillator.stop(audioCtx.currentTime + 1);
-            }, 5000);
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            }, 10000);
         });
 
-        console.log("Streaming setup complete. Watermarks hidden.");
-
-        // දෝෂ නිරාකරණය සඳහා ස්ක්‍රීන්ෂොට් එකක් ගැනීම
-        await page.screenshot({ path: 'debug.png' });
+        console.log("Automation successful. Ready to stream.");
+        
+        // Debugging Screenshot
+        await page.screenshot({ path: 'zoom_live.png' });
 
     } catch (e) {
-        console.error("Automation Error: ", e);
-        await page.screenshot({ path: 'error.png' });
+        console.error("Error: ", e);
+        await page.screenshot({ path: 'error_debug.png' });
     }
 }
 
