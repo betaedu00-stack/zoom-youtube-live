@@ -33,35 +33,29 @@ jobs:
 
       - name: Start Stream
         env:
-          # ඔබ හදන Secrets වල නම් මේවාට සමාන විය යුතුය
           ZOOM_URL: ${{ secrets.ZOOM_URL }}
           YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
         run: |
-          # 1. Virtual Display එක ආරම්භ කර එය සූදානම් වන තෙක් රැඳී සිටීම
           Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
           export DISPLAY=:99
           
-          # Display එක පණගැන්වෙන තෙක් තත්පර 10ක් රැඳී සිටින්න
+          # Display එක පණගැන්වෙන තෙක් රැඳී සිටීම
           for i in {1..10}; do xset -q -display :99 >/dev/null 2>&1 && break || sleep 1; done
           
           fluxbox &
           sleep 5
 
-          # 2. Audio Setup
           pulseaudio -D --exit-idle-time=-1
           pacmd load-module module-virtual-sink sink_name=vss
           pacmd set-default-sink vss
 
-          # 3. Zoom Script (ප්‍රතිඵල logs වල බැලීමට 'node zoom.js' කෙලින්ම දුවවමු)
           node zoom.js &
           
-          echo "Waiting 60s for Zoom to load..."
+          echo "Waiting 60s for Zoom Fullscreen..."
           sleep 60
 
-          # 4. FFmpeg Stream
           ffmpeg -f x11grab -draw_mouse 0 -video_size 1920x1080 -i :99 \
           -f pulse -i default \
-          -c:v libx264 -preset veryfast -b:v 2500k -maxrate 2500k -bufsize 5000k \
-          -pix_fmt yuv420p -g 60 \
-          -c:a aac -b:a 128k -ar 44100 \
+          -c:v libx264 -preset veryfast -b:v 3500k -maxrate 3500k -bufsize 7000k \
+          -pix_fmt yuv420p -g 60 -c:a aac -b:a 128k -ar 44100 \
           -f flv "rtmp://a.rtmp.youtube.com/live2/${YOUTUBE_STREAM_KEY}"
