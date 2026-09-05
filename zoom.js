@@ -24,51 +24,66 @@ async function run() {
 
     const page = await browser.newPage();
     
-    // Zoom Web Client එකට සෘජුවම යාම
+    // Web Client එකට ලින්ක් එක හැරවීම
     let targetUrl = zoomUrl.replace('/j/', '/wc/join/');
-    if (!targetUrl.includes('?pwd=')) {
-        // සමහර විට pwd එක පස්සේ එන්න පුළුවන්, ඒ නිසා check කරන්න
-    }
 
-    console.log("Opening Zoom Web Client...");
+    console.log("Navigating to Zoom Web Client...");
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
     try {
-        // නම ඇතුළත් කරන කොටුව එනතෙක් රැඳී සිටීම (විවිධ selectors පරීක්ෂා කරයි)
-        console.log("Waiting for name field...");
-        const nameSelector = 'input[name="name"], #inputname, .input-name';
-        await page.waitForSelector(nameSelector, { visible: true, timeout: 60000 });
+        // 1. නම ඇතුළත් කරන කොටුව එනතෙක් රැඳී සිටීම
+        console.log("Searching for name input field...");
+        await page.waitForSelector('input', { visible: true, timeout: 60000 });
 
-        // නම ඇතුළත් කිරීම (β Edu Live)
-        await page.focus(nameSelector);
-        await page.type(nameSelector, 'β Edu Live', { delay: 100 });
-        console.log("Name entered.");
+        // 2. සියලුම input fields අතරින් නම ඇතුළත් කළ යුතු එක සොයා ගැනීම
+        await page.evaluate(() => {
+            const inputs = Array.from(document.querySelectorAll('input'));
+            // නම ඇතුළත් කරන කොටුව බොහෝ විට පළමු text input එකයි
+            const nameField = inputs.find(i => i.type === 'text' || i.id === 'inputname' || i.name === 'name');
+            if (nameField) {
+                nameField.value = 'β Edu Live';
+                // සැබෑ ලෙසම ටයිප් කළාක් මෙන් පෙන්වීමට events trigger කිරීම
+                nameField.dispatchEvent(new Event('input', { bubbles: true }));
+                nameField.dispatchEvent(new Event('change', { bubbles: true }));
+                console.log("Name value set via JS.");
+            }
+        });
 
-        // Join Button එක සෙවීම සහ එබීම
-        const joinBtnSelector = '.u-btn.join-btn, button[type="submit"], .zm-btn';
-        await page.waitForSelector(joinBtnSelector, { visible: true });
-        await page.click(joinBtnSelector);
-        console.log("Join button clicked!");
+        // අමතර ආරක්ෂාවට Puppeteer මගිනුත් ටයිප් කරමු
+        await page.type('input', 'β Edu Live');
+        console.log("Typed name via Puppeteer.");
 
-        // මීටින් එකට ලොග් වූ පසු UI එක පිරිසිදු කිරීම
-        setTimeout(async () => {
+        // 3. Join Button එක එබීම
+        console.log("Searching for Join button...");
+        await page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const joinBtn = buttons.find(b => b.innerText.includes('Join') || b.classList.contains('join-btn'));
+            if (joinBtn) {
+                joinBtn.click();
+                console.log("Join button clicked via JS.");
+            }
+        });
+
+        // 4. UI Clean-up (Watermarks මැකීම)
+        // මීටින් එකට ලොග් වී ටික වෙලාවකින් මෙය ක්‍රියාත්මක වේ
+        setInterval(async () => {
             try {
                 await page.addStyleTag({
                     content: `
                         .meeting-app__watermark, .recording-label, 
-                        #onetrust-consent-sdk, .zm-modal, .modal-dialog { 
+                        #onetrust-consent-sdk, .zm-modal, .modal-dialog,
+                        .full-screen-widget { 
                             display: none !important; 
+                            opacity: 0 !important;
                         }
                     `
                 });
-                console.log("UI cleaning applied.");
-            } catch (err) {}
-        }, 20000);
+            } catch (e) {}
+        }, 10000);
 
     } catch (error) {
-        console.error("Automation error:", error.message);
-        // Debugging සඳහා Screenshot එකක් ගන්න
-        await page.screenshot({ path: 'debug_error.png' });
+        console.error("Critical Error during automation:", error.message);
+        await page.screenshot({ path: 'error_screenshot.png' });
     }
 }
 
