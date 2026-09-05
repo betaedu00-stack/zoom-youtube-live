@@ -19,21 +19,25 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg pulseaudio fluxbox libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev
+          # Google Chrome Stable ස්ථාපනය කිරීම
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable xvfb ffmpeg pulseaudio fluxbox libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev
 
-      - name: Install NPM Dependencies
+      - name: Install NPM Packages
         run: npm install puppeteer-extra puppeteer-extra-plugin-stealth puppeteer
 
-      - name: Start Virtual Display & Stream
+      - name: Start Virtual Server & Stream
         env:
           ZOOM_URL: ${{ secrets.ZOOM_URL }}
           YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
         run: |
-          # 1. Virtual Screen (Display) ආරම්භ කිරීම
-          Xvfb :99 -screen 0 1920x1080x24 -ac &
+          # 1. Virtual Display එක පණගැන්වීම
+          Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
           export DISPLAY=:99
           
-          # 2. Window Manager එක ආරම්භ කිරීම (කළු තිරය වැළැක්වීමට)
+          # 2. Window Manager (Fluxbox) පණගැන්වීම
           fluxbox &
           sleep 5
 
@@ -42,12 +46,16 @@ jobs:
           pacmd load-module module-virtual-sink sink_name=vss
           pacmd set-default-sink vss
 
-          # 4. Zoom Automation එක Background එකේ පණගැන්වීම
+          # 4. Zoom Script එක ආරම්භ කිරීම
           node zoom.js &
-          sleep 30 # මීටින් එකට ලොග් වීමට කාලය ලබා දීම
+          
+          # බ්‍රව්සරය සහ Zoom ලෝඩ් වීමට සෑහෙන කාලයක් ලබා දීම
+          echo "Waiting 60 seconds for Zoom to load..."
+          sleep 60
 
           # 5. FFmpeg හරහා YouTube වෙත Stream කිරීම
-          ffmpeg -f x11grab -video_size 1920x1080 -i :99 \
+          # මෙහි -draw_mouse 0 මගින් මවුස් එක ස්ට්‍රීම් එකේ පෙනීම නවත්වයි
+          ffmpeg -f x11grab -draw_mouse 0 -video_size 1920x1080 -i :99 \
           -f pulse -i default \
           -c:v libx264 -preset veryfast -b:v 3000k -maxrate 3000k -bufsize 6000k \
           -pix_fmt yuv420p -g 60 \
