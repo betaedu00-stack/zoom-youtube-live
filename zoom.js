@@ -3,10 +3,10 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 async function run() {
-    console.log("Starting Browser...");
+    console.log("Launching Chrome...");
     const browser = await puppeteer.launch({
         headless: false,
-        executablePath: '/usr/bin/google-chrome', // Stable Chrome භාවිතා කිරීම
+        executablePath: '/usr/bin/google-chrome', // පද්ධතියේ ඇති Chrome භාවිතා කරයි
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -22,69 +22,55 @@ async function run() {
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-
+    
     let zoomUrl = process.env.ZOOM_URL;
     if (zoomUrl.includes('/j/')) {
         zoomUrl = zoomUrl.replace('/j/', '/wc/join/');
     }
 
-    console.log("Navigating to Zoom: " + zoomUrl);
+    console.log("Joining Zoom Meeting...");
     
     try {
         await page.goto(zoomUrl, { waitUntil: 'networkidle2', timeout: 60000 });
         
-        // කුකීස් හෝ වෙනත් Popups මැකීම
-        await page.addStyleTag({ content: '#onetrust-consent-sdk { display: none !important; }' });
-
-        // නම ඇතුළත් කිරීම
-        console.log("Waiting for Join Input...");
+        // මීටින් එකට ලොග් වීමේ පියවර
         await page.waitForSelector('#inputname', { timeout: 30000 });
-        await page.type('#inputname', 'β Edu Live Stream');
-        
-        // Join Button එක එබීම
+        await page.type('#inputname', 'β Edu Live');
         await page.click('.u-btn.join-btn');
-        console.log("Join Button Clicked.");
+        console.log("Clicking Join...");
 
-        // මීටින් එක ඇතුළට යන තෙක් රැඳී සිටීම
-        await page.waitForTimeout(15000);
+        await new Promise(r => setTimeout(r, 15000)); // රැඳී සිටීම
 
-        // Watermarks සහ අනවශ්‍ය දේවල් CSS මගින් සැඟවීම
+        // Watermarks සහ UI සැඟවීම
         await page.addStyleTag({
             content: `
                 .meeting-app__watermark, .recording-label, .participant-id-label, 
-                .zm-audio-status-indicator, .audio-watermark, .full-screen-widget { 
+                .zm-audio-status-indicator, .audio-watermark, #onetrust-consent-sdk { 
                     display: none !important; 
-                    opacity: 0 !important;
                 }
-                body { overflow: hidden !important; }
             `
         });
 
-        // Procedural Audio (Copyright වැළැක්වීමට සියුම් හඬක් නිපදවීම)
+        // Copyright Audio (Procedural)
         await page.evaluate(() => {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
             setInterval(() => {
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
+                const osc = ctx.createOscillator();
+                const g = ctx.createGain();
                 osc.type = 'sine';
-                osc.frequency.setValueAtTime(200, audioCtx.currentTime);
-                gain.gain.setValueAtTime(0.001, audioCtx.currentTime);
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.start();
-                osc.stop(audioCtx.currentTime + 0.5);
+                osc.frequency.setValueAtTime(220, ctx.currentTime);
+                g.gain.setValueAtTime(0.001, ctx.currentTime);
+                osc.connect(g); g.connect(ctx.destination);
+                osc.start(); osc.stop(ctx.currentTime + 1);
             }, 10000);
         });
 
-        console.log("Automation successful. Ready to stream.");
-        
-        // Debugging Screenshot
-        await page.screenshot({ path: 'zoom_live.png' });
+        console.log("Stream is ready on virtual display.");
+        await page.screenshot({ path: 'ready.png' });
 
     } catch (e) {
-        console.error("Error: ", e);
-        await page.screenshot({ path: 'error_debug.png' });
+        console.error("Automation Error:", e);
+        await page.screenshot({ path: 'error.png' });
     }
 }
 
