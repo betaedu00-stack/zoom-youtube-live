@@ -6,6 +6,8 @@ on:
 jobs:
   stream:
     runs-on: ubuntu-latest
+    # මීටින් එක පැය 6කට වඩා වැඩි නම් මෙය වැදගත් වේ
+    timeout-minutes: 360 
 
     steps:
       - name: Checkout Code
@@ -19,41 +21,46 @@ jobs:
       - name: Install Google Chrome & Tools
         run: |
           sudo apt-get update
+          sudo apt-get install -y wget gnupg
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable xvfb ffmpeg pulseaudio fluxbox
 
       - name: Install NPM Dependencies
+        # මෙහිදී environment variable එක step එකටම ලබා දී ඇත
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
         run: |
-          # මෙහිදී Puppeteer අමතරව Chrome බාගත කිරීම නවත්වයි (වැඩේ වේගවත් වේ)
-          export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-          npm install
+          npm install --no-package-lock
 
       - name: Start Stream
         env:
           ZOOM_URL: ${{ secrets.ZOOM_URL }}
           YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
         run: |
-          # Virtual Display එක සෑදීම
+          # 1. Virtual Display
           Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
           export DISPLAY=:99
           
+          # 2. Window Manager
           fluxbox &
           sleep 5
 
-          # Audio Setup
+          # 3. Audio Setup
           pulseaudio -D --exit-idle-time=-1
           pacmd load-module module-virtual-sink sink_name=vss
           pacmd set-default-sink vss
 
-          # Zoom Script එක පණගැන්වීම
+          # 4. Zoom Script
           node zoom.js &
           
-          echo "Waiting for Zoom to initialize (60s)..."
+          echo "Waiting 60s for Zoom to load..."
           sleep 60
 
-          # FFmpeg හරහා YouTube වෙත Stream කිරීම
+          # 5. FFmpeg Stream
           ffmpeg -f x11grab -draw_mouse 0 -video_size 1920x1080 -i :99 \
           -f pulse -i default \
           -c:v libx264 -preset veryfast -b:v 3000k -maxrate 3000k -bufsize 6000k \
