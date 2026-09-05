@@ -6,8 +6,7 @@ on:
 jobs:
   stream:
     runs-on: ubuntu-latest
-    # මීටින් එක පැය 6කට වඩා වැඩි නම් මෙය වැදගත් වේ
-    timeout-minutes: 360 
+    timeout-minutes: 360
 
     steps:
       - name: Checkout Code
@@ -18,7 +17,7 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install Google Chrome & Tools
+      - name: Install Tools
         run: |
           sudo apt-get update
           sudo apt-get install -y wget gnupg
@@ -27,43 +26,42 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable xvfb ffmpeg pulseaudio fluxbox
 
-      - name: Install NPM Dependencies
-        # මෙහිදී environment variable එක step එකටම ලබා දී ඇත
+      - name: Install Dependencies
         env:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
-          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
-        run: |
-          npm install --no-package-lock
+        run: npm install puppeteer-extra puppeteer-extra-plugin-stealth puppeteer
 
       - name: Start Stream
         env:
+          # ඔබ හදන Secrets වල නම් මේවාට සමාන විය යුතුය
           ZOOM_URL: ${{ secrets.ZOOM_URL }}
           YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
-          PUPPETEER_SKIP_DOWNLOAD: 'true'
         run: |
-          # 1. Virtual Display
+          # 1. Virtual Display එක ආරම්භ කර එය සූදානම් වන තෙක් රැඳී සිටීම
           Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
           export DISPLAY=:99
           
-          # 2. Window Manager
+          # Display එක පණගැන්වෙන තෙක් තත්පර 10ක් රැඳී සිටින්න
+          for i in {1..10}; do xset -q -display :99 >/dev/null 2>&1 && break || sleep 1; done
+          
           fluxbox &
           sleep 5
 
-          # 3. Audio Setup
+          # 2. Audio Setup
           pulseaudio -D --exit-idle-time=-1
           pacmd load-module module-virtual-sink sink_name=vss
           pacmd set-default-sink vss
 
-          # 4. Zoom Script
+          # 3. Zoom Script (ප්‍රතිඵල logs වල බැලීමට 'node zoom.js' කෙලින්ම දුවවමු)
           node zoom.js &
           
           echo "Waiting 60s for Zoom to load..."
           sleep 60
 
-          # 5. FFmpeg Stream
+          # 4. FFmpeg Stream
           ffmpeg -f x11grab -draw_mouse 0 -video_size 1920x1080 -i :99 \
           -f pulse -i default \
-          -c:v libx264 -preset veryfast -b:v 3000k -maxrate 3000k -bufsize 6000k \
+          -c:v libx264 -preset veryfast -b:v 2500k -maxrate 2500k -bufsize 5000k \
           -pix_fmt yuv420p -g 60 \
           -c:a aac -b:a 128k -ar 44100 \
           -f flv "rtmp://a.rtmp.youtube.com/live2/${YOUTUBE_STREAM_KEY}"
