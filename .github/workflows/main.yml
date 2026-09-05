@@ -16,45 +16,44 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install System Dependencies
+      - name: Install Google Chrome & Tools
         run: |
           sudo apt-get update
-          # Google Chrome Stable ස්ථාපනය කිරීම
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
           sudo apt-get update
-          sudo apt-get install -y google-chrome-stable xvfb ffmpeg pulseaudio fluxbox libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm-dev
+          sudo apt-get install -y google-chrome-stable xvfb ffmpeg pulseaudio fluxbox
 
-      - name: Install NPM Packages
-        run: npm install puppeteer-extra puppeteer-extra-plugin-stealth puppeteer
+      - name: Install NPM Dependencies
+        run: |
+          # මෙහිදී Puppeteer අමතරව Chrome බාගත කිරීම නවත්වයි (වැඩේ වේගවත් වේ)
+          export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+          npm install
 
-      - name: Start Virtual Server & Stream
+      - name: Start Stream
         env:
           ZOOM_URL: ${{ secrets.ZOOM_URL }}
           YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
         run: |
-          # 1. Virtual Display එක පණගැන්වීම
+          # Virtual Display එක සෑදීම
           Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
           export DISPLAY=:99
           
-          # 2. Window Manager (Fluxbox) පණගැන්වීම
           fluxbox &
           sleep 5
 
-          # 3. Audio Setup
+          # Audio Setup
           pulseaudio -D --exit-idle-time=-1
           pacmd load-module module-virtual-sink sink_name=vss
           pacmd set-default-sink vss
 
-          # 4. Zoom Script එක ආරම්භ කිරීම
+          # Zoom Script එක පණගැන්වීම
           node zoom.js &
           
-          # බ්‍රව්සරය සහ Zoom ලෝඩ් වීමට සෑහෙන කාලයක් ලබා දීම
-          echo "Waiting 60 seconds for Zoom to load..."
+          echo "Waiting for Zoom to initialize (60s)..."
           sleep 60
 
-          # 5. FFmpeg හරහා YouTube වෙත Stream කිරීම
-          # මෙහි -draw_mouse 0 මගින් මවුස් එක ස්ට්‍රීම් එකේ පෙනීම නවත්වයි
+          # FFmpeg හරහා YouTube වෙත Stream කිරීම
           ffmpeg -f x11grab -draw_mouse 0 -video_size 1920x1080 -i :99 \
           -f pulse -i default \
           -c:v libx264 -preset veryfast -b:v 3000k -maxrate 3000k -bufsize 6000k \
