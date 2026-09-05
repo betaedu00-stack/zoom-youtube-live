@@ -1,0 +1,49 @@
+name: Zoom to YouTube Stream
+
+on:
+  workflow_dispatch: # හස්තීයව ආරම්භ කිරීමට
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ffmpeg pulseaudio fluxbox
+          npm install
+
+      - name: Start Stream
+        env:
+          ZOOM_URL: ${{ secrets.ZOOM_URL }}
+          YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
+        run: |
+          # 1. Virtual Display එකක් සෑදීම
+          Xvfb :99 -screen 0 1920x1080x24 &
+          export DISPLAY=:99
+
+          # 2. Audio සර්වර් එක ආරම්භ කිරීම
+          pulseaudio -D --exit-idle-time=-1
+          pacmd load-module module-virtual-sink sink_name=vss
+          pacmd set-default-sink vss
+
+          # 3. Zoom ස්ක්‍රිප්ට් එක Background එකේ පණ ගැන්වීම
+          node zoom.js &
+
+          sleep 15 # මීටින් එක ලෝඩ් වීමට කාලය ලබා දීම
+
+          # 4. FFmpeg හරහා YouTube වෙත ස්ට්‍රීම් කිරීම
+          ffmpeg -f x11grab -video_size 1920x1080 -i :99 \
+          -f pulse -i default -c:v libx264 -preset veryfast \
+          -maxrate 3000k -bufsize 6000k -pix_fmt yuv420p \
+          -g 50 -c:a aac -b:a 128k -ar 44100 \
+          -f flv "rtmp://a.rtmp.youtube.com/live2/${YOUTUBE_STREAM_KEY}"
