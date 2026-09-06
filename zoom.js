@@ -4,11 +4,10 @@ puppeteer.use(StealthPlugin());
 
 async function run() {
     const zoomUrl = process.env.ZOOM_URL;
-    // Zoom Link එක Web Client එකට පරිවර්තනය කිරීම
     let targetUrl = zoomUrl.replace('/j/', '/wc/join/').replace('/w/', '/wc/join/');
 
     const browser = await puppeteer.launch({
-        headless: false, // Virtual display එකේ වැඩ කිරීමට false තිබිය යුතුය
+        headless: false,
         executablePath: '/usr/bin/google-chrome',
         args: [
             '--no-sandbox',
@@ -18,65 +17,65 @@ async function run() {
             '--start-maximized',
             '--kiosk',
             '--disable-infobars',
-            // Bot එකක් බව හඳුනාගැනීම වැලැක්වීමට සැබෑ Browser එකක තොරතුරු ලබා දීම
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         ],
         ignoreDefaultArgs: ['--enable-automation'],
         defaultViewport: { width: 1920, height: 1080 }
     });
 
     const page = await browser.newPage();
-    
-    // Webdriver property එක සැඟවීම (Anti-bot bypass)
-    await page.evaluateOnNewDocument(() => {
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
-    });
 
+    // 1. මුලින්ම පේජ් එකට යෑම
+    console.log("Navigating to:", targetUrl);
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
     try {
-        console.log("Waiting for page to load...");
-        await new Promise(r => setTimeout(r, 25000)); // මීටින් පේජ් එක ලෝඩ් වන තෙක් රැඳී සිටීම
+        // 2. වැරදීමකින් Privacy පිටුවට ගියහොත් නැවත මීටින් එකට හරවා යැවීම (Anti-Redirect)
+        if (page.url().includes('privacy') || page.url().includes('cookie-policy')) {
+            console.log("Redirected to privacy page. Retrying join link...");
+            await page.goto(targetUrl, { waitUntil: 'networkidle2' });
+        }
 
-        // නම ඇතුළත් කරන තැනට Tab මගින් යාම
-        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
-        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
+        // 3. Cookie Consent බොත්තම ඇත්නම් එය ස්වයංක්‍රීයව ක්ලික් කිරීම
+        await new Promise(r => setTimeout(r, 10000)); // Load වීමට කාලය ලබා දීම
+        await page.evaluate(() => {
+            const acceptBtn = document.querySelector('#onetrust-accept-btn-handler') || 
+                              document.querySelector('.optanon-allow-all') ||
+                              document.querySelector('#btnAcceptCookies');
+            if (acceptBtn) acceptBtn.click();
+        });
 
-        // නම ලෙස "Dasun" ටයිප් කිරීම (මෙහි Delay එක වැඩි කර ඇත)
-        console.log("Typing name: Dasun");
-        await page.keyboard.type('Dasun', { delay: 250 }); 
+        // 4. Join වීමේ ක්‍රියාවලිය (Dasun නම භාවිතා කරමින්)
+        console.log("Starting Join Sequence...");
+        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000));
+        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000));
         
-        await new Promise(r => setTimeout(r, 1000));
-        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
-        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
-        
-        // මීටින් එකට සම්බන්ධ වීමට Enter එබීම
+        await page.keyboard.type('Dasun', { delay: 250 });
+        console.log("Typed name: Dasun");
+
+        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000));
+        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000));
         await page.keyboard.press('Enter');
-        console.log("Join button pressed.");
-        
-        // UI එක පිරිසිදු කරන ලූපය (Watermarks සහ Buttons සැඟවීමට)
+        console.log("Join Button Pressed.");
+
+        // 5. UI එක පිරිසිදු කිරීම සහ Audio Connect කිරීම
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
+                    // Privacy සහ Cookie Modals ඉවත් කිරීම
+                    const cookieModal = document.querySelector('#onetrust-consent-sdk');
+                    if (cookieModal) cookieModal.remove();
+
                     const css = `
-                        .meeting-app__watermark, 
-                        .audio-watermark, 
-                        .recording-label, 
-                        .footer, 
-                        .header, 
-                        #onetrust-consent-sdk, 
-                        .zm-modal, 
-                        #live-indicator-container, 
-                        .zm-notification { display: none !important; opacity: 0 !important; } 
+                        .meeting-app__watermark, .audio-watermark, .recording-label, .footer, .header, 
+                        #onetrust-consent-sdk, .zm-modal, #live-indicator-container, .zm-notification,
+                        .privacy-policy-banner { display: none !important; opacity: 0 !important; } 
                         .video-canvas-container { top: 0 !important; left: 0 !important; height: 100vh !important; width: 100vw !important; } 
                         body, html { overflow: hidden !important; cursor: none !important; }
                     `;
                     let style = document.getElementById('beta-style') || document.createElement('style');
-                    style.id = 'beta-style'; 
-                    style.innerHTML = css; 
-                    document.head.appendChild(style);
+                    style.id = 'beta-style'; style.innerHTML = css; document.head.appendChild(style);
 
-                    // ඕඩියෝ එක සම්බන්ධ කිරීමට උත්සාහ කිරීම
                     const btn = Array.from(document.querySelectorAll('button')).find(b => 
                         b.innerText.includes('Computer Audio') || b.innerText.includes('Join Audio')
                     );
@@ -86,7 +85,7 @@ async function run() {
         }, 5000);
 
     } catch (e) {
-        console.error("Error occurred:", e);
+        console.error("Join process failed:", e);
     }
 }
 
