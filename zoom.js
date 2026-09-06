@@ -14,8 +14,7 @@ async function run() {
             '--disable-setuid-sandbox',
             '--disable-blink-features=AutomationControlled',
             '--window-size=1920,1080',
-            '--start-maximized',
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            '--start-maximized'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
@@ -23,88 +22,85 @@ async function run() {
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
 
-    // 1. Redirect වැළැක්වීමේ Listener එක
-    page.on('framenavigated', frame => {
-        const url = frame.url();
-        if (url.includes('/terms') || url.includes('/privacy')) {
-            console.log("Terms page detected! Redirecting back...");
-            page.goto(targetUrl).catch(() => {});
-        }
-    });
-
     try {
         console.log("Zoom වෙත පිවිසෙමින්...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 2. පේජ් එක ලෝඩ් වන තෙක් තත්පර 25ක් රැඳී සිටීම
-        await new Promise(r => setTimeout(r, 25000));
+        // 1. පේජ් එක ලෝඩ් වීමට සෑහෙන වේලාවක් (තත්පර 30ක්) ලබා දෙන්න
+        await new Promise(r => setTimeout(r, 30000));
 
-        // 3. කරදරකාරී ලින්ක් සහ Cookie බැනර් මකා දැමීම (වැරදීමකින් ක්ලික් වීම වැළැක්වීමට)
-        await page.evaluate(() => {
-            const links = document.querySelectorAll('a, #onetrust-consent-sdk, .terms-service');
-            links.forEach(el => el.remove());
-        });
+        // 2. නම ඇතුළත් කිරීමේ Loop එක (නම වැටෙනකම්ම උත්සාහ කරයි)
+        let nameConfirmed = false;
+        for (let attempt = 1; attempt <= 10; attempt++) {
+            console.log(`නම ඇතුළත් කිරීමේ වාරය: ${attempt}`);
 
-        // 4. නම ඇතුළත් කිරීමේ "Guaranteed" ක්‍රමය
-        console.log("නම ඇතුළත් කරමින්...");
-        const inputSelector = 'input[name="inputname"]';
-        await page.waitForSelector(inputSelector, { visible: true });
+            // කොටුව සොයාගැනීම සහ Click කිරීම
+            await page.evaluate(() => {
+                const input = document.querySelector('input[name="inputname"]') || document.querySelector('input');
+                if (input) {
+                    input.focus();
+                    input.click();
+                    input.value = ""; // පරණ දේවල් මකන්න
+                }
+            });
 
-        // කොටුව Click කර පැරණි දේ මකා දැමීම
-        await page.click(inputSelector);
-        await page.keyboard.down('Control');
-        await page.keyboard.press('A');
-        await page.keyboard.up('Control');
-        await page.keyboard.press('Backspace');
+            // "Dasun" අකුරෙන් අකුර සෙමින් ටයිප් කිරීම
+            await page.keyboard.type('Dasun', { delay: 200 });
+            await page.keyboard.press('Tab'); // Zoom එකට දැනෙන්න Tab එකක් ඔබන්න
+            await new Promise(r => setTimeout(r, 2000));
 
-        // නම ටයිප් කර "Tab" එබීම (Zoom එකට නම තහවුරු කිරීමට මෙය අත්‍යවශ්‍යයි)
-        await page.keyboard.type('Dasun', { delay: 200 });
-        await page.keyboard.press('Tab'); 
-        await new Promise(r => setTimeout(r, 2000));
+            // නම කොටුව ඇතුළේ තියෙනවද කියලා චෙක් කිරීම
+            nameConfirmed = await page.evaluate(() => {
+                const input = document.querySelector('input[name="inputname"]') || document.querySelector('input');
+                return input && input.value.includes('Dasun');
+            });
 
-        // 5. නම ඇතුළත් වී ඇති බව තහවුරු කර Join බොත්තම එබීම
-        console.log("Join බොත්තම සොයමින්...");
-        await page.evaluate(() => {
-            const input = document.querySelector('input[name="inputname"]');
-            const btns = Array.from(document.querySelectorAll('button'));
-            const joinBtn = btns.find(b => b.innerText.toLowerCase().includes('join'));
-
-            if (input && input.value.length > 0 && joinBtn) {
-                joinBtn.disabled = false;
-                joinBtn.classList.remove('disabled');
-                joinBtn.click(); // JavaScript Click
+            if (nameConfirmed) {
+                console.log("නම සාර්ථකව තහවුරු විය!");
+                break;
             }
-        });
+        }
 
-        // අමතර ආරක්ෂාවට Keyboard එකෙන් Enter එබීම
-        await page.keyboard.press('Enter');
+        // 3. නම තහවුරු වූ පසු පමණක් Join බොත්තම එබීම
+        if (nameConfirmed) {
+            await page.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('button'));
+                const joinBtn = btns.find(b => b.innerText.toLowerCase().includes('join'));
+                if (joinBtn) {
+                    joinBtn.disabled = false;
+                    joinBtn.classList.remove('disabled');
+                    joinBtn.click();
+                }
+            });
+            // අමතර ආරක්ෂාවට Keyboard Enter
+            await page.keyboard.press('Enter');
+        }
 
-        // 6. මීටින් එක ඇතුළත UI පිරිසිදු කිරීම සහ Audio සම්බන්ධ කිරීම (දිගටම ක්‍රියාත්මක වේ)
+        // 4. UI පිරිසිදු කිරීම සහ Audio Join කිරීමේ ලූපය
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
-                    // වෝටර්මාර්ක් සහ අනවශ්‍ය දේවල් සැඟවීම
+                    // වෝටර්මාර්ක් සහ කරදරකාරී ලින්ක් සැඟවීම
                     const css = `
                         .meeting-app__watermark, .audio-watermark, .recording-label, .footer, .header, 
-                        #onetrust-consent-sdk, .zm-modal, #live-indicator-container, .zm-notification, 
-                        .privacy-policy-banner, .terms-service { display: none !important; opacity: 0 !important; } 
+                        #onetrust-consent-sdk, .zm-modal, #live-indicator-container, .zm-notification,
+                        a, .terms-service { display: none !important; opacity: 0 !important; } 
                         .video-canvas-container { top: 0 !important; left: 0 !important; height: 100vh !important; width: 100vw !important; } 
                         body, html { overflow: hidden !important; cursor: none !important; }
                     `;
                     let style = document.getElementById('beta-style') || document.createElement('style');
                     style.id = 'beta-style'; style.innerHTML = css; document.head.appendChild(style);
 
-                    // Join Audio බොත්තම එබීම
-                    const audioBtn = Array.from(document.querySelectorAll('button')).find(b => 
+                    const btn = Array.from(document.querySelectorAll('button')).find(b => 
                         b.innerText.includes('Computer Audio') || b.innerText.includes('Join Audio')
                     );
-                    if (audioBtn) audioBtn.click();
+                    if (btn) btn.click();
                 });
             } catch (e) {}
         }, 5000);
 
     } catch (e) {
-        console.error("Critical Error:", e);
+        console.error("Error:", e);
     }
 }
 
