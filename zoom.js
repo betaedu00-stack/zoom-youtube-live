@@ -13,8 +13,7 @@ async function run() {
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-blink-features=AutomationControlled',
-            '--window-size=1920,1080',
-            '--start-maximized'
+            '--window-size=1920,1080'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
@@ -26,49 +25,66 @@ async function run() {
         console.log("Navigating to:", targetUrl);
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 1. පේජ් එක ලෝඩ් වන තෙක් තත්පර 20ක් රැඳී සිටින්න
-        console.log("Waiting for page elements...");
+        // 1. පේජ් එක ලෝඩ් වන තෙක් රැඳී සිටින්න
         await new Promise(r => setTimeout(r, 20000));
 
-        // 2. නම ඇතුළත් කරන කොටුව සොයා එයට "Dasun" ඇතුළත් කිරීමේ ප්‍රබල ක්‍රමය
+        // 2. නම ඇතුළත් කිරීම සහ Events Trigger කිරීම
+        console.log("Entering Name...");
         await page.evaluate(() => {
-            // පේජ් එකේ ඇති සියලුම Input fields සොයන්න
-            const inputs = document.querySelectorAll('input');
-            for (let input of inputs) {
-                // එය නම ඇතුළත් කරන එක බව පෙනේ නම් (සාමාන්‍යයෙන් පළමු හෝ එකම text input එක)
-                if (input.type === 'text' || !input.type) {
-                    input.focus();
-                    input.value = 'Dasun';
-                    // React/Angular වැනි Framework වලට අගය වෙනස් වූ බව දැනුම් දීම
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('blur', { bubbles: true }));
-                }
+            const input = document.querySelector('input[name="inputname"]') || document.querySelector('input[type="text"]');
+            if (input) {
+                input.focus();
+                input.value = 'Dasun';
+                // Zoom එකට නම ලැබුණු බව දැනුම් දීමට අවශ්‍ය සියලුම Events ක්‍රියාත්මක කිරීම
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
+                input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
             }
         });
 
-        // 3. යම් හෙයකින් ඉහත ක්‍රමය අසාර්ථක වුවහොත් සැබෑ Keyboard එකෙන් ටයිප් කිරීම
-        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
-        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
-        await page.keyboard.type('Dasun', { delay: 150 });
-        
-        console.log("Typing completed. Waiting for button to enable...");
-        await new Promise(r => setTimeout(r, 3000));
+        // අමතර ආරක්ෂාවට Keyboard එකෙන්ද ටයිප් කරන්න
+        await page.keyboard.type(' ', { delay: 100 }); 
+        await new Promise(r => setTimeout(r, 2000));
 
-        // 4. "Join" බොත්තම සොයා එය Click කිරීම
+        // 3. Join බොත්තම බලහත්කාරයෙන් සක්‍රිය කර ක්ලික් කිරීම (The Fix)
+        console.log("Force enabling Join button...");
         await page.evaluate(() => {
             const buttons = Array.from(document.querySelectorAll('button'));
             const joinBtn = buttons.find(b => b.innerText.toLowerCase().includes('join'));
+            
             if (joinBtn) {
-                joinBtn.disabled = false; // බොත්තම අක්‍රිය වී ඇත්නම් එය සක්‍රිය කරන්න
+                // බොත්තම අක්‍රිය කරන Class සහ Attributes ඉවත් කිරීම
+                joinBtn.removeAttribute('disabled');
+                joinBtn.classList.remove('disabled');
+                joinBtn.disabled = false;
+                joinBtn.style.opacity = "1";
+                joinBtn.style.pointerEvents = "auto";
+                
+                // ක්ලික් කිරීම
                 joinBtn.click();
+                console.log("Join button clicked via script.");
             }
         });
 
-        // 5. මීටින් එක ඇතුළත UI පිරිසිදු කිරීම සහ Audio Connect කිරීම
+        // 4. යම් හෙයකින් ඉහත ක්‍රමය මදි වුවහොත් Mouse එකෙන් බොත්තම ක්ලික් කිරීම
+        const joinButtonCoords = await page.evaluate(() => {
+            const b = Array.from(document.querySelectorAll('button')).find(btn => btn.innerText.toLowerCase().includes('join'));
+            if (b) {
+                const { left, top, width, height } = b.getBoundingClientRect();
+                return { x: left + width / 2, y: top + height / 2 };
+            }
+            return null;
+        });
+
+        if (joinButtonCoords) {
+            await page.mouse.click(joinButtonCoords.x, joinButtonCoords.y);
+        }
+
+        // 5. මීටින් එක තුළ UI පිරිසිදු කිරීම
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
-                    // වෝටර්මාර්ක් සහ මෙනු සැඟවීම
                     const css = `
                         .meeting-app__watermark, .audio-watermark, .recording-label, .footer, .header, 
                         #onetrust-consent-sdk, .zm-modal, #live-indicator-container, .zm-notification { display: none !important; opacity: 0 !important; } 
@@ -78,7 +94,6 @@ async function run() {
                     let style = document.getElementById('beta-style') || document.createElement('style');
                     style.id = 'beta-style'; style.innerHTML = css; document.head.appendChild(style);
 
-                    // Audio සම්බන්ධ කිරීම
                     const audioBtn = Array.from(document.querySelectorAll('button')).find(b => 
                         b.innerText.includes('Computer Audio') || b.innerText.includes('Join Audio')
                     );
