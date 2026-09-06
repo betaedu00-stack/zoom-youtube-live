@@ -14,91 +14,103 @@ async function run() {
             '--disable-setuid-sandbox',
             '--disable-blink-features=AutomationControlled',
             '--window-size=1920,1080',
-            '--use-fake-ui-for-media-stream',
+            '--start-maximized',
             '--disable-web-security'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
 
     const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
 
-    // 1. Browser එකේ අනන්‍යතාවය (Fingerprint) සම්පූර්ණයෙන් වෙනස් කිරීම
+    // 1. Browser Identity Spoofing (බොට් ලක්ෂණ සම්පූර්ණයෙන් සැඟවීම)
     await page.evaluateOnNewDocument(() => {
-        // WebDriver trace එක සම්පූර්ණයෙන් මකා දැමීම
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        
-        // Linux වෙනුවට Windows ලෙස පෙනී සිටීම
         Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-        
-        // සැබෑ Chrome එකක තොරතුරු එකතු කිරීම
         window.chrome = { runtime: {} };
-        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-        
-        // WebGL තොරතුරු Spoof කිරීම (Hardware detection bypass)
-        const getParameter = WebGLRenderingContext.prototype.getParameter;
-        WebGLRenderingContext.prototype.getParameter = function(parameter) {
-            if (parameter === 37445) return 'Intel Inc.';
-            if (parameter === 37446) return 'Intel(R) Iris(TM) Plus Graphics 640';
-            return getParameter.apply(this, arguments);
-        };
+    });
+
+    // 2. Anti-Redirect (වෙනත් පිටුවලට යාම වැළැක්වීම)
+    page.on('framenavigated', frame => {
+        if (frame.url().includes('/terms') || frame.url().includes('/privacy')) {
+            page.goto(targetUrl).catch(() => {});
+        }
     });
 
     try {
-        console.log("Zoom වෙත රහසිගතව පිවිසෙමින්...");
+        console.log("Zoom පේජ් එකට ඇතුළු වෙමින්...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 2. පේජ් එක ලෝඩ් වීමට සෑහෙන වේලාවක් (තත්පර 30ක්) ලබා දෙන්න
+        // පේජ් එකේ Scripts ලෝඩ් වීමට තත්පර 30ක් ලබා දෙන්න
         await new Promise(r => setTimeout(r, 30000));
 
-        // 3. Zoom Bot Detection Warning එක බලහත්කාරයෙන් මකා දැමීම (The Fix)
-        console.log("Bot Warnings ඉවත් කරමින්...");
+        // 3. Cleanup (කරදරකාරී ලින්ක් සහ බැනර් මකා දැමීම)
         await page.evaluate(() => {
-            // "Automated bots aren't allowed" පණිවිඩය ඇතුළු සියලුම Alerts මකා දමන්න
-            const alerts = document.querySelectorAll('.zm-alert, .alert, #join-err-msg, .privacy-policy-banner');
-            alerts.forEach(a => a.remove());
-
-            // "Sign in to join" බොත්තම වෙනුවට සැබෑ "Join" ක්‍රියාවලිය මතු කිරීම
-            const signBtn = document.querySelector('.zm-btn--primary');
-            if (signBtn && signBtn.innerText.includes('Sign in')) {
-                signBtn.innerText = 'Join'; // බොත්තමේ නම වෙනස් කරන්න
-            }
+            const trash = document.querySelectorAll('a, #onetrust-consent-sdk, footer, .terms-service');
+            trash.forEach(el => el.remove());
         });
 
-        // 4. නම ඇතුළත් කිරීම (Dasun)
-        console.log("නම ඇතුළත් කරමින්...");
+        // 4. නම ඇතුළත් කිරීමේ "අවසාන විසඳුම" (Injection + Typing + Verification)
+        console.log("නම ඇතුළත් කිරීමේ පියවර...");
         const inputSelector = 'input[name="inputname"]';
         await page.waitForSelector(inputSelector, { visible: true });
-        
-        await page.click(inputSelector);
-        await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
-        await page.keyboard.press('Backspace');
 
-        // අකුරෙන් අකුර සෙමින් ටයිප් කරන්න
-        for (const char of "Dasun") {
-            await page.keyboard.type(char, { delay: 250 });
+        // Loop එකක් මගින් නම වැටෙන බව තහවුරු කිරීම
+        for (let i = 0; i < 5; i++) {
+            await page.click(inputSelector);
+            // පැරණි දේ මකා දැමීම
+            await page.keyboard.down('Control'); await page.keyboard.press('A'); await page.keyboard.up('Control');
+            await page.keyboard.press('Backspace');
+
+            // නම ටයිප් කිරීම
+            await page.keyboard.type('Dasun', { delay: 150 });
+            
+            // Zoom එකේ පද්ධතියට (React) නම ලැබුණු බව තහවුරු කරන බලවත් Injection එක
+            await page.evaluate(() => {
+                const input = document.querySelector('input[name="inputname"]');
+                if (input) {
+                    input.value = 'Dasun';
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'n' }));
+                    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'n' }));
+                }
+            });
+
+            await page.keyboard.press('Tab');
+            await new Promise(r => setTimeout(r, 2000));
+
+            // නම වැටිලද කියා කියවා බැලීම
+            const currentName = await page.evaluate(() => document.querySelector('input[name="inputname"]').value);
+            if (currentName.includes('Dasun')) {
+                console.log("නම සාර්ථකව තහවුරු විය!");
+                break;
+            }
         }
-        await page.keyboard.press('Tab');
-        await new Promise(r => setTimeout(r, 3000));
 
-        // 5. Join බොත්තම "Force Click" කිරීම
-        console.log("Join බොත්තම බලහත්කාරයෙන් ඔබමින්...");
+        // 5. Join බොත්තම බලහත්කාරයෙන් Enable කර Click කිරීම
+        console.log("Join බොත්තම ඔබමින්...");
         await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button'));
-            const joinBtn = btns.find(b => b.innerText.toLowerCase().includes('join'));
-            if (joinBtn) {
-                joinBtn.removeAttribute('disabled');
-                joinBtn.disabled = false;
-                joinBtn.click();
+            const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.toLowerCase().includes('join'));
+            if (btn) {
+                btn.removeAttribute('disabled');
+                btn.disabled = false;
+                btn.classList.remove('disabled');
+                btn.style.backgroundColor = 'blue'; // පෙනුම වෙනස් කර තහවුරු කිරීම
+                btn.click();
             }
         });
 
-        // 6. මීටින් එක ඇතුළත UI එක පිරිසිදු කිරීම
+        // Backup Enter Press
+        await page.keyboard.press('Enter');
+
+        // 6. මීටින් එක තුළ UI පිරිසිදු කරන ලූපය
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
                     const css = `
                         .meeting-app__watermark, .audio-watermark, .recording-label, .footer, .header, 
-                        #onetrust-consent-sdk, .zm-modal, #live-indicator-container, .zm-notification, 
+                        #onetrust-consent-sdk, .zm-modal, #live-indicator-container, .zm-notification,
                         a, .terms-service { display: none !important; opacity: 0 !important; } 
                         .video-canvas-container { top: 0 !important; left: 0 !important; height: 100vh !important; width: 100vw !important; } 
                         body, html { overflow: hidden !important; cursor: none !important; }
@@ -115,7 +127,7 @@ async function run() {
         }, 5000);
 
     } catch (e) {
-        console.error("දෝෂයකි:", e);
+        console.error("දෝෂයක් පවතී:", e);
     }
 }
 
