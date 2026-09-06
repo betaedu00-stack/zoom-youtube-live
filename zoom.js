@@ -12,78 +12,90 @@ async function run() {
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--disable-blink-features=AutomationControlled', // බොට් එකක් බව හැඟවෙන ප්‍රධාන ලක්ෂණය අක්‍රිය කරයි
-            '--disable-infobars',
+            '--disable-blink-features=AutomationControlled',
             '--window-size=1920,1080',
-            '--start-maximized'
+            '--start-maximized',
+            '--disable-infobars'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
 
     const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
 
-    // 1. Browser එකේ ඇති සියලුම 'Bot' ලක්ෂණ සැඟවීම
+    // Bot detection මඟහැරීමට සැබෑ මනුෂ්‍යයෙකුගේ Browser එකක් ලෙස පෙනී සිටීම
     await page.evaluateOnNewDocument(() => {
-        // WebDriver property එක ඉවත් කිරීම
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        // Chrome object එකක් ඇති බව පෙන්වීම
-        window.chrome = { runtime: {} };
-        // Plugins සහ Languages සැබෑ ලෙස පෙන්වීම
-        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
     });
 
     try {
-        console.log("Navigating to Zoom with Ultimate Stealth...");
+        console.log("Navigating to Zoom...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 2. සැබෑ මනුෂ්‍යයෙකු ලෙස Mouse එක චලනය කිරීම
-        await page.mouse.move(100, 100);
-        await new Promise(r => setTimeout(r, 2000));
-        await page.mouse.move(400, 300);
+        // 1. පේජ් එක සම්පූර්ණයෙන් ලෝඩ් වන තෙක් තත්පර 20ක් රැඳී සිටීම
+        console.log("Waiting for Zoom to settle...");
+        await new Promise(r => setTimeout(r, 20000));
 
-        // 3. පේජ් එක ලෝඩ් වන තෙක් තත්පර 15ක් රැඳී සිටින්න
-        await new Promise(r => setTimeout(r, 15000));
+        // 2. නම ඇතුළත් කරන කොටුව (Input) සෙවීම සහ නම ටයිප් කිරීම
+        console.log("Attempting to find name field and type...");
+        const isTyped = await page.evaluate(() => {
+            // පේජ් එකේ ඇති සියලුම input tags පරීක්ෂා කිරීම
+            const inputs = Array.from(document.querySelectorAll('input'));
+            const nameBox = inputs.find(i => 
+                i.placeholder.includes('Name') || 
+                i.name === 'inputname' || 
+                i.id === 'inputname' ||
+                (i.type === 'text' && i.id !== 'meeting_number')
+            );
 
-        // 4. යම් හෙයකින් Bot Warning එක ආවොත් එය DOM එකෙන් බලහත්කාරයෙන් ඉවත් කිරීම
-        await page.evaluate(() => {
-            const warning = document.querySelector('.zm-alert') || document.querySelector('.alert-warning');
-            if (warning) warning.remove();
-            
-            // "Sign in to join" බොත්තම වෙනුවට සාමාන්‍ය Join බොත්තම පෙන්වීමට උත්සාහ කිරීම
-            const signBtn = document.querySelector('.zm-btn--primary');
-            if (signBtn && signBtn.innerText.includes('Sign in')) {
-                signBtn.innerText = 'Join';
+            if (nameBox) {
+                nameBox.focus();
+                nameBox.value = 'Dasun';
+                // Zoom එකට නම ලැබුණු බව දැනුම් දීමට අවශ්‍ය Events ක්‍රියාත්මක කිරීම
+                nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+                nameBox.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
             }
+            return false;
         });
 
-        // 5. නම ඇතුළත් කිරීම (Dasun)
-        console.log("Entering Name...");
-        const inputSelector = 'input[name="inputname"]';
-        await page.waitForSelector(inputSelector, { visible: true });
-        await page.click(inputSelector);
-        
-        // අකුරෙන් අකුර සැබෑ ලෙස ටයිප් කිරීම
-        const name = "Dasun";
-        for (let char of name) {
-            await page.keyboard.type(char, { delay: 200 });
+        // 3. යම් හෙයකින් ඉහත ක්‍රමය වැඩ නොකළොත් (Tab method as backup)
+        if (!isTyped) {
+            console.log("Selector failed, trying Tab method...");
+            await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+            await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+            await page.keyboard.type('Dasun', { delay: 150 });
         }
 
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 3000));
 
-        // 6. Join බොත්තම ක්ලික් කිරීම
+        // 4. Join බොත්තම බලහත්කාරයෙන් Enable කර Click කිරීම
+        console.log("Force-clicking Join button...");
         await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button'));
-            const joinBtn = btns.find(b => b.innerText.toLowerCase().includes('join'));
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const joinBtn = buttons.find(b => b.innerText.toLowerCase().includes('join'));
+            
             if (joinBtn) {
+                // බොත්තම අක්‍රිය කරන ඕනෑම දෙයක් ඉවත් කරන්න
+                joinBtn.removeAttribute('disabled');
                 joinBtn.disabled = false;
-                joinBtn.click();
+                joinBtn.classList.remove('disabled');
+                joinBtn.style.opacity = "1";
+                joinBtn.style.pointerEvents = "auto";
+                
+                joinBtn.click(); // JavaScript Click
             }
         });
 
-        console.log("Join Attempted!");
+        // 5. Bot detected පණිවිඩය ආවොත් එය DOM එකෙන් ඉවත් කිරීම (Bypass error)
+        await page.evaluate(() => {
+            const alerts = document.querySelectorAll('.zm-alert, .alert, #join-err-msg');
+            alerts.forEach(a => a.remove());
+        });
 
-        // 7. මීටින් එක තුළ UI පිරිසිදු කිරීමේ ලූපය
+        console.log("Execution finished. Monitoring UI...");
+
+        // 6. මීටින් එක ඇතුළත UI සැඟවීම සහ Audio සම්බන්ධ කිරීම
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
@@ -105,7 +117,7 @@ async function run() {
         }, 5000);
 
     } catch (e) {
-        console.error("Error:", e);
+        console.error("Critical Failure:", e);
     }
 }
 
