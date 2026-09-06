@@ -12,74 +12,60 @@ async function run() {
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--disable-gpu',
+            '--disable-blink-features=AutomationControlled', // Bot එකක් බව හඳුනාගැනීම වළක්වයි
             '--window-size=1920,1080',
-            '--start-maximized',
-            '--kiosk',
-            '--disable-infobars',
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         ],
-        ignoreDefaultArgs: ['--enable-automation'],
-        defaultViewport: { width: 1920, height: 1080 }
+        ignoreDefaultArgs: ['--enable-automation']
     });
 
     const page = await browser.newPage();
 
+    // 1. Webdriver හඳුනාගැනීම වළක්වන තවත් ආරක්ෂක පියවරක්
+    await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    });
+
     try {
         console.log("Navigating to Zoom...");
-        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
+        await page.goto(targetUrl, { waitUntil: 'networkidle2' });
 
-        // 1. පේජ් එක ලෝඩ් වන තෙක් තත්පර 15ක් ඉවසන්න
-        await new Promise(r => setTimeout(r, 15000));
+        // 2. සැබෑ මනුෂ්‍යයෙකු ලෙස Mouse එක චලනය කිරීම (Simulate human movement)
+        await page.mouse.move(100, 100);
+        await page.mouse.move(200, 250);
+        
+        await new Promise(r => setTimeout(r, 10000)); // පේජ් එක ලෝඩ් වන තෙක් රැඳී සිටීම
 
-        // 2. නම ඇතුළත් කරන කොටුව (Input Box) සෙවීම සහ Click කිරීම
-        console.log("Looking for Name Input Box...");
-        const inputTyped = await page.evaluate(async () => {
-            // නම ඇතුළත් කළ හැකි සියලුම තැන් පරීක්ෂා කිරීම
-            const selectors = [
-                'input[name="inputname"]',
-                '#inputname',
-                'input[type="text"]',
-                '.form-control',
-                'input'
-            ];
-
-            for (let selector of selectors) {
-                const el = document.querySelector(selector);
-                if (el && el.placeholder !== 'Meeting ID') { // Meeting ID කොටුව නොවන බව තහවුරු කරගන්න
-                    el.focus();
-                    el.click();
-                    return true;
-                }
-            }
-            return false;
+        // 3. Bot Warning එකක් ආවොත් එය DOM එකෙන් ඉවත් කිරීම (Force Unblock)
+        await page.evaluate(() => {
+            const errorMsg = document.querySelector('.zm-alert') || document.querySelector('.alert');
+            if (errorMsg) errorMsg.remove();
         });
 
-        if (inputTyped) {
-            console.log("Input box found. Typing name: Dasun");
-            // පවතින දේවල් මකා දැමීම (Select All + Backspace)
-            await page.keyboard.down('Control');
-            await page.keyboard.press('A');
-            await page.keyboard.up('Control');
-            await page.keyboard.press('Backspace');
+        // 4. නම ඇතුළත් කිරීමේ කොටුව සොයා එය Click කිරීම
+        const nameInputSelector = 'input[name="inputname"]';
+        await page.waitForSelector(nameInputSelector, { visible: true, timeout: 20000 });
+        
+        await page.click(nameInputSelector);
+        await new Promise(r => setTimeout(r, 1000));
 
-            // නම ටයිප් කිරීම
-            await page.keyboard.type('Dasun', { delay: 200 });
-            await new Promise(r => setTimeout(r, 1000));
-            
-            // Join බොත්තම එබීම (Enter)
-            await page.keyboard.press('Enter');
-            console.log("Name typed and Enter pressed.");
-        } else {
-            console.log("Could not find input box via selector. Trying Tab method...");
-            // Selector එක වැඩ නොකළොත් පැරණි ක්‍රමය (Tab) භාවිතා කිරීම
-            await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000));
-            await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 1000));
-            await page.keyboard.type('Dasun', { delay: 200 });
-            await page.keyboard.press('Enter');
+        // 5. නම එකවර ටයිප් නොකර අකුරෙන් අකුර (Human-like) ටයිප් කිරීම
+        const name = "Dasun";
+        for (let char of name) {
+            await page.keyboard.type(char, { delay: Math.random() * 300 + 100 });
         }
 
-        // 3. UI එක පිරිසිදු කිරීම සහ Audio සම්බන්ධ කිරීමේ ලූපය
+        console.log("Name typed human-like.");
+        await new Promise(r => setTimeout(r, 2000));
+
+        // 6. Join බොත්තම Click කිරීම (Enter එබීමට වඩා මෙය සාර්ථකයි)
+        await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button'));
+            const joinBtn = btns.find(b => b.innerText.includes('Join') && !b.innerText.includes('Sign in'));
+            if (joinBtn) joinBtn.click();
+        });
+
+        // 7. UI එක සැඟවීම සහ Audio සම්බන්ධ කිරීම
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
@@ -93,16 +79,16 @@ async function run() {
                     let style = document.getElementById('beta-style') || document.createElement('style');
                     style.id = 'beta-style'; style.innerHTML = css; document.head.appendChild(style);
 
-                    // Computer Audio Join බොත්තම ක්ලික් කිරීම
-                    const btns = Array.from(document.querySelectorAll('button'));
-                    const joinBtn = btns.find(b => b.innerText.includes('Computer Audio') || b.innerText.includes('Join Audio'));
-                    if (joinBtn) joinBtn.click();
+                    const joinAudio = Array.from(document.querySelectorAll('button')).find(b => 
+                        b.innerText.includes('Computer Audio') || b.innerText.includes('Join Audio')
+                    );
+                    if (joinAudio) joinAudio.click();
                 });
             } catch (e) {}
         }, 5000);
 
     } catch (e) {
-        console.error("Error during join process:", e);
+        console.error("Error:", e);
     }
 }
 
