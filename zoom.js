@@ -6,11 +6,7 @@ async function run() {
     const zoomUrl = process.env.ZOOM_URL;
     if (!zoomUrl) { process.exit(1); }
 
-    // ලින්ක් එක ඕනෑම එකකට වැඩ කරන ලෙස සැකසීම (/j/ හෝ /w/ -> /wc/join/)
     let targetUrl = zoomUrl.replace('/j/', '/wc/join/').replace('/w/', '/wc/join/');
-    if (!targetUrl.includes('/wc/join/')) {
-        targetUrl = targetUrl.replace('.zoom.us/', '.zoom.us/wc/join/');
-    }
 
     const browser = await puppeteer.launch({
         headless: false,
@@ -25,70 +21,70 @@ async function run() {
     });
 
     const page = await browser.newPage();
-    console.log("Opening Zoom Web Client:", targetUrl);
+    console.log("Navigating to:", targetUrl);
     await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
     try {
-        // 1. නම ඇතුළත් කිරීමේ කොටස එනතෙක් රැඳී සිටීම
-        await page.waitForSelector('input', { visible: true, timeout: 60000 });
-        console.log("Join field found. Entering details...");
+        // 1. පිටුව ලෝඩ් වන තෙක් තත්පර 20ක් රැඳී සිටින්න
+        await new Promise(r => setTimeout(r, 20000));
 
-        // 2. නම සහ ඊමේල් ඇතුළත් කර Join බටන් එක එබීම (Advanced JS Injection)
-        await page.evaluate(() => {
-            const inputs = Array.from(document.querySelectorAll('input'));
-            
-            // නම ඇතුළත් කරන කොටුව සොයා ගැනීම
-            const nameField = inputs.find(i => i.type === 'text' || i.id === 'inputname' || i.placeholder.includes('Name'));
-            if (nameField) {
-                nameField.value = 'β Edu Live';
-                nameField.dispatchEvent(new Event('input', { bubbles: true }));
-                nameField.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+        // 2. නම ඇතුළත් කරන කොටුව කෙලින්ම Focus කිරීම
+        console.log("Typing Name...");
+        
+        // මුලින්ම 'Tab' කී එක භාවිතයෙන් Input එක සොයා ගැනීම (වඩාත් සාර්ථක ක්‍රමය)
+        await page.keyboard.press('Tab');
+        await new Promise(r => setTimeout(r, 500));
+        await page.keyboard.press('Tab');
+        await new Promise(r => setTimeout(r, 500));
 
-            // වෙබිනාර් එකක් නම් ඊමේල් එකත් පිරවීම
-            const emailField = inputs.find(i => i.type === 'email' || i.placeholder.includes('Email'));
-            if (emailField) {
-                emailField.value = 'live@betaedu.com';
-                emailField.dispatchEvent(new Event('input', { bubbles: true }));
-                emailField.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+        // නම ටයිප් කිරීම (සැබෑ යතුරුපුවරුවකින් ටයිප් කරන්නාක් මෙන්)
+        await page.keyboard.type('β Edu Live', { delay: 150 });
+        console.log("Name entered.");
 
-            // Join බටන් එක සොයාගෙන එබීම
-            setTimeout(() => {
-                const buttons = Array.from(document.querySelectorAll('button'));
-                const joinBtn = buttons.find(b => b.innerText.includes('Join') || b.classList.contains('join-btn'));
-                if (joinBtn) joinBtn.click();
-            }, 1000);
-        });
+        // 3. ඊළඟට ඇති Join බටන් එකට ගොස් 'Enter' එබීම
+        await new Promise(r => setTimeout(r, 1000));
+        await page.keyboard.press('Tab'); // 'Remember name' checkbox එකට යයි
+        await new Promise(r => setTimeout(r, 500));
+        await page.keyboard.press('Tab'); // 'Join' button එකට යයි
+        await new Promise(r => setTimeout(r, 500));
+        await page.keyboard.press('Enter'); 
+        
+        console.log("Enter pressed to Join.");
 
-        // 3. මීටින් එක ඇතුළතදී Audio සම්බන්ධ කිරීම සහ පෙනුම පිරිසිදු කිරීම (Infinite Loop)
+        // 4. Webinar එකකදී Email එකක් ඉල්ලුවහොත් ඒ සඳහා අමතර පියවරක්
+        setTimeout(async () => {
+            await page.keyboard.type('live@betaedu.com', { delay: 100 });
+            await page.keyboard.press('Enter');
+        }, 5000);
+
+        // 5. මීටින් එක ඇතුළත පිරිසිදු කිරීම (Infinite Loop)
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
-                    // වෝටර්මාර්ක් සහ අනවශ්‍ය දේවල් මැකීම
-                    const selectors = [
-                        '.meeting-app__watermark', '.audio-watermark', '.recording-label',
-                        '.participant-id-label', '.meeting-info-icon__container', 
-                        '.footer', '.pwa-footer', '.header', '.pwa-header',
-                        '#onetrust-consent-sdk', '.zm-modal', '#live-indicator-container',
-                        '.zm-notification', '.notification-list-container'
-                    ];
-                    selectors.forEach(s => {
-                        const el = document.querySelector(s);
-                        if (el) el.style.display = 'none';
-                    });
+                    // වෝටර්මාර්ක් සහ අනවශ්‍ය UI සැඟවීම
+                    const css = `
+                        .meeting-app__watermark, .audio-watermark, .recording-label,
+                        .participant-id-label, .meeting-info-icon__container, 
+                        .footer, .pwa-footer, .header, .pwa-header,
+                        #onetrust-consent-sdk, .zm-modal, #live-indicator-container,
+                        .zm-notification, .notification-list-container { 
+                            display: none !important; opacity: 0 !important; pointer-events: none !important;
+                        }
+                        .video-canvas-container { top: 0 !important; left: 0 !important; height: 100vh !important; width: 100vw !important; }
+                        body, html { overflow: hidden !important; cursor: none !important; }
+                    `;
+                    let style = document.getElementById('beta-edu-style');
+                    if (!style) {
+                        style = document.createElement('style');
+                        style.id = 'beta-edu-style';
+                        document.head.appendChild(style);
+                    }
+                    style.innerHTML = css;
 
-                    // Audio සම්බන්ධ කිරීමේ පණිවිඩය ආවොත් එය ක්ලික් කිරීම
+                    // Audio සම්බන්ධ කිරීමේ පණිවිඩය ආවොත් එය එබීම
                     const btns = Array.from(document.querySelectorAll('button'));
                     const audioBtn = btns.find(b => b.innerText.includes('Computer Audio'));
                     if (audioBtn) audioBtn.click();
-                    
-                    // වීඩියෝව මුළු තිරයටම ගැනීම
-                    const video = document.querySelector('.video-canvas-container');
-                    if (video) {
-                        video.style.top = '0'; video.style.left = '0';
-                        video.style.height = '100vh'; video.style.width = '100vw';
-                    }
                 });
             } catch (e) {}
         }, 5000);
