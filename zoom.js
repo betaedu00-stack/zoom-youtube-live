@@ -12,64 +12,63 @@ async function run() {
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--disable-blink-features=AutomationControlled', // Bot එකක් බව හඳුනාගැනීම වළක්වයි
+            '--disable-blink-features=AutomationControlled',
             '--window-size=1920,1080',
-            '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            '--start-maximized'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
 
     const page = await browser.newPage();
-
-    // 1. Webdriver හඳුනාගැනීම වළක්වන තවත් ආරක්ෂක පියවරක්
-    await page.evaluateOnNewDocument(() => {
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
-    });
+    await page.setViewport({ width: 1920, height: 1080 });
 
     try {
-        console.log("Navigating to Zoom...");
-        await page.goto(targetUrl, { waitUntil: 'networkidle2' });
+        console.log("Navigating to:", targetUrl);
+        await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 2. සැබෑ මනුෂ්‍යයෙකු ලෙස Mouse එක චලනය කිරීම (Simulate human movement)
-        await page.mouse.move(100, 100);
-        await page.mouse.move(200, 250);
-        
-        await new Promise(r => setTimeout(r, 10000)); // පේජ් එක ලෝඩ් වන තෙක් රැඳී සිටීම
+        // 1. පේජ් එක ලෝඩ් වන තෙක් තත්පර 20ක් රැඳී සිටින්න
+        console.log("Waiting for page elements...");
+        await new Promise(r => setTimeout(r, 20000));
 
-        // 3. Bot Warning එකක් ආවොත් එය DOM එකෙන් ඉවත් කිරීම (Force Unblock)
+        // 2. නම ඇතුළත් කරන කොටුව සොයා එයට "Dasun" ඇතුළත් කිරීමේ ප්‍රබල ක්‍රමය
         await page.evaluate(() => {
-            const errorMsg = document.querySelector('.zm-alert') || document.querySelector('.alert');
-            if (errorMsg) errorMsg.remove();
+            // පේජ් එකේ ඇති සියලුම Input fields සොයන්න
+            const inputs = document.querySelectorAll('input');
+            for (let input of inputs) {
+                // එය නම ඇතුළත් කරන එක බව පෙනේ නම් (සාමාන්‍යයෙන් පළමු හෝ එකම text input එක)
+                if (input.type === 'text' || !input.type) {
+                    input.focus();
+                    input.value = 'Dasun';
+                    // React/Angular වැනි Framework වලට අගය වෙනස් වූ බව දැනුම් දීම
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('blur', { bubbles: true }));
+                }
+            }
         });
 
-        // 4. නම ඇතුළත් කිරීමේ කොටුව සොයා එය Click කිරීම
-        const nameInputSelector = 'input[name="inputname"]';
-        await page.waitForSelector(nameInputSelector, { visible: true, timeout: 20000 });
+        // 3. යම් හෙයකින් ඉහත ක්‍රමය අසාර්ථක වුවහොත් සැබෑ Keyboard එකෙන් ටයිප් කිරීම
+        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+        await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
+        await page.keyboard.type('Dasun', { delay: 150 });
         
-        await page.click(nameInputSelector);
-        await new Promise(r => setTimeout(r, 1000));
+        console.log("Typing completed. Waiting for button to enable...");
+        await new Promise(r => setTimeout(r, 3000));
 
-        // 5. නම එකවර ටයිප් නොකර අකුරෙන් අකුර (Human-like) ටයිප් කිරීම
-        const name = "Dasun";
-        for (let char of name) {
-            await page.keyboard.type(char, { delay: Math.random() * 300 + 100 });
-        }
-
-        console.log("Name typed human-like.");
-        await new Promise(r => setTimeout(r, 2000));
-
-        // 6. Join බොත්තම Click කිරීම (Enter එබීමට වඩා මෙය සාර්ථකයි)
+        // 4. "Join" බොත්තම සොයා එය Click කිරීම
         await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button'));
-            const joinBtn = btns.find(b => b.innerText.includes('Join') && !b.innerText.includes('Sign in'));
-            if (joinBtn) joinBtn.click();
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const joinBtn = buttons.find(b => b.innerText.toLowerCase().includes('join'));
+            if (joinBtn) {
+                joinBtn.disabled = false; // බොත්තම අක්‍රිය වී ඇත්නම් එය සක්‍රිය කරන්න
+                joinBtn.click();
+            }
         });
 
-        // 7. UI එක සැඟවීම සහ Audio සම්බන්ධ කිරීම
+        // 5. මීටින් එක ඇතුළත UI පිරිසිදු කිරීම සහ Audio Connect කිරීම
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
-                    // වෝටර්මාර්ක් සහ අනවශ්‍ය බොත්තම් ඉවත් කිරීම
+                    // වෝටර්මාර්ක් සහ මෙනු සැඟවීම
                     const css = `
                         .meeting-app__watermark, .audio-watermark, .recording-label, .footer, .header, 
                         #onetrust-consent-sdk, .zm-modal, #live-indicator-container, .zm-notification { display: none !important; opacity: 0 !important; } 
@@ -79,10 +78,11 @@ async function run() {
                     let style = document.getElementById('beta-style') || document.createElement('style');
                     style.id = 'beta-style'; style.innerHTML = css; document.head.appendChild(style);
 
-                    const joinAudio = Array.from(document.querySelectorAll('button')).find(b => 
+                    // Audio සම්බන්ධ කිරීම
+                    const audioBtn = Array.from(document.querySelectorAll('button')).find(b => 
                         b.innerText.includes('Computer Audio') || b.innerText.includes('Join Audio')
                     );
-                    if (joinAudio) joinAudio.click();
+                    if (audioBtn) audioBtn.click();
                 });
             } catch (e) {}
         }, 5000);
