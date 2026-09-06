@@ -14,7 +14,9 @@ async function run() {
             '--disable-setuid-sandbox',
             '--disable-blink-features=AutomationControlled',
             '--window-size=1920,1080',
-            '--start-maximized'
+            '--start-maximized',
+            '--disable-web-security',
+            '--allow-running-insecure-content'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
@@ -23,69 +25,73 @@ async function run() {
     await page.setViewport({ width: 1920, height: 1080 });
 
     try {
-        console.log("Zoom වෙත පිවිසෙමින්...");
+        console.log("Zoom වෙත ප්‍රවේශ වෙමින්...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 1. පේජ් එක ලෝඩ් වීමට සෑහෙන වේලාවක් (තත්පර 35ක්) ලබා දෙන්න
-        console.log("Zoom පද්ධතිය ලෝඩ් වන තෙක් රැඳී සිටියි...");
-        await new Promise(r => setTimeout(r, 35000));
+        // 1. Zoom පද්ධතිය සූදානම් වීමට සෑහෙන වේලාවක් (තත්පර 40ක්) ලබා දෙන්න
+        console.log("Zoom Scripts ලෝඩ් වන තෙක් රැඳී සිටියි...");
+        await new Promise(r => setTimeout(r, 40000));
 
-        // 2. කරදරකාරී බැනර් සහ Tooltips මකා දැමීම
+        // 2. අත්‍යවශ්‍ය පියවර: reCAPTCHA සහ අනවශ්‍ය වැටවල් (Validation) ඉවත් කිරීම
         await page.evaluate(() => {
-            const trash = document.querySelectorAll('.ant-tooltip, #onetrust-consent-sdk, a, footer');
+            // HTML5 Validation අක්‍රිය කිරීම (Please fill out this field පණිවිඩය එන එක නවත්වයි)
+            const forms = document.querySelectorAll('form');
+            forms.forEach(f => f.setAttribute('novalidate', 'true'));
+            
+            const inputs = document.querySelectorAll('input');
+            inputs.forEach(i => {
+                i.removeAttribute('required');
+                i.setAttribute('aria-required', 'false');
+            });
+
+            // බැනර් සහ අනවශ්‍ය Modals මකා දැමීම
+            const trash = document.querySelectorAll('.ant-tooltip, #onetrust-consent-sdk, a, footer, .terms-service');
             trash.forEach(el => el.remove());
         });
 
-        // 3. React පද්ධතිය මඟහැර නම ඇතුළත් කිරීමේ "Supirima" ක්‍රමය
-        console.log("නම එන්නත් කරමින් (Injecting Name)...");
-        await page.evaluate(() => {
-            function setNativeValue(element, value) {
-                const valueSetter = Object.getOwnPropertyDescriptor(element, 'value').set;
-                const prototype = Object.getPrototypeOf(element);
-                const prototypeValueSetter = Object.getOwnPropertyDescriptor(prototype, 'value').set;
+        // 3. නම ඇතුළත් කිරීමේ ප්‍රබලම ක්‍රමය (System-level Insertion)
+        console.log("නම ඇතුළත් කරමින්...");
+        const nameInput = 'input[name="inputname"]';
+        await page.waitForSelector(nameInput, { visible: true });
+        
+        await page.click(nameInput);
+        await new Promise(r => setTimeout(r, 1000));
 
-                if (valueSetter && valueSetter !== prototypeValueSetter) {
-                    prototypeValueSetter.call(element, value);
-                } else {
-                    valueSetter.call(element, value);
-                }
-            }
+        // Browser එකේ අභ්‍යන්තර "InsertText" විධානය මගින් නම එන්නත් කිරීම
+        await page.evaluate((name) => {
+            const el = document.querySelector('input[name="inputname"]');
+            el.focus();
+            document.execCommand('insertText', false, name);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        }, 'Dasun');
 
-            const input = document.querySelector('input[name="inputname"]') || document.querySelector('input');
-            if (input) {
-                input.focus();
-                // React State එක Update කරන නියම ක්‍රමය
-                setNativeValue(input, 'Dasun');
-                // Events Trigger කිරීම
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-                input.dispatchEvent(new Event('blur', { bubbles: true }));
-            }
-        });
+        await new Promise(r => setTimeout(r, 3000));
 
-        // අමතර තහවුරු කිරීමට Keyboard එකෙන් තව වතාවක් ටයිප් කරන්න
-        await page.keyboard.type(' ', { delay: 100 });
-        await new Promise(r => setTimeout(r, 2000));
-
-        // 4. Join බොත්තම බලහත්කාරයෙන් සක්‍රිය කර ක්ලික් කිරීම
+        // 4. Join බොත්තම බලහත්කාරයෙන් Enable කර ක්ලික් කිරීම (The Forceful Join)
         console.log("Join බොත්තම ඔබමින්...");
         await page.evaluate(() => {
-            const joinBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.toLowerCase().includes('join'));
+            const joinBtn = Array.from(document.querySelectorAll('button')).find(b => 
+                b.innerText.toLowerCase().includes('join') && !b.innerText.toLowerCase().includes('sign')
+            );
+            
             if (joinBtn) {
-                // බොත්තමේ බාධාවන් ඉවත් කිරීම
+                // බොත්තම Disable කරන හැම දේම අයින් කරන්න
                 joinBtn.disabled = false;
-                joinBtn.classList.remove('disabled');
                 joinBtn.removeAttribute('disabled');
+                joinBtn.classList.remove('disabled');
+                joinBtn.style.pointerEvents = 'auto';
+                joinBtn.style.opacity = '1';
+                joinBtn.style.backgroundColor = '#0E71EB'; // නිල් පාට කරන්න
                 
-                // JavaScript මගින් ක්ලික් කිරීම
+                // බලහත්කාරයෙන් ක්ලික් කරන්න
                 joinBtn.click();
             }
         });
 
-        // Keyboard Enter එකත් Backup එකක් විදිහට ඔබමු
+        // Enter backup එකක් ලෙස ඔබන්න
         await page.keyboard.press('Enter');
 
-        // 5. මීටින් එක ඇතුළත UI පිරිසිදු කරන ලූපය
+        // 5. මීටින් එක ඇතුළත සියල්ල පිරිසිදු කරන ලූපය
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
@@ -107,7 +113,7 @@ async function run() {
         }, 5000);
 
     } catch (e) {
-        console.error("Critical Failure:", e);
+        console.error("බරපතල දෝෂයකි:", e);
     }
 }
 
