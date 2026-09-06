@@ -15,8 +15,7 @@ async function run() {
             '--disable-blink-features=AutomationControlled',
             '--window-size=1920,1080',
             '--start-maximized',
-            '--disable-web-security',
-            '--allow-running-insecure-content'
+            '--disable-web-security'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
@@ -24,74 +23,77 @@ async function run() {
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
 
+    // බොට් ලක්ෂණ සම්පූර්ණයෙන් සැඟවීම (Identity Spoofing)
+    await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+        window.chrome = { runtime: {} };
+        Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+    });
+
     try {
-        console.log("Zoom වෙත ප්‍රවේශ වෙමින්...");
+        console.log("Zoom පේජ් එකට ඇතුළු වෙමින්...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 1. Zoom පද්ධතිය සූදානම් වීමට සෑහෙන වේලාවක් (තත්පර 40ක්) ලබා දෙන්න
-        console.log("Zoom Scripts ලෝඩ් වන තෙක් රැඳී සිටියි...");
+        // පේජ් එක ලෝඩ් වීමට සෑහෙන වේලාවක් (තත්පර 40ක්) ලබා දෙන්න
+        console.log("Zoom පද්ධතිය සූදානම් වන තෙක් රැඳී සිටියි...");
         await new Promise(r => setTimeout(r, 40000));
 
-        // 2. අත්‍යවශ්‍ය පියවර: reCAPTCHA සහ අනවශ්‍ය වැටවල් (Validation) ඉවත් කිරීම
-        await page.evaluate(() => {
-            // HTML5 Validation අක්‍රිය කිරීම (Please fill out this field පණිවිඩය එන එක නවත්වයි)
+        // සියලුම බාධක එකවර ඉවත් කිරීමේ "Nuclear" Injection එක
+        await page.evaluate(async () => {
+            const nameToType = "Dasun";
+
+            // 1. React පද්ධතිය ඇතුළට නම රිංගවීම
+            function injectReactValue(el, value) {
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                nativeInputValueSetter.call(el, value);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            // 2. පේජ් එකේ තියෙන input එක හොයාගන්නා තෙක් ලූපයක් ක්‍රියාත්මක කිරීම
+            const nameField = document.querySelector('input[name="inputname"]') || document.querySelector('input[type="text"]');
+            
+            if (nameField) {
+                nameField.focus();
+                injectReactValue(nameField, nameToType);
+                console.log("නම Inject කරන ලදී.");
+            }
+
+            // 3. කරදරකාරී Cookies, Tooltips සහ ලින්ක් මකා දැමීම
+            const trash = document.querySelectorAll('a, #onetrust-consent-sdk, .ant-tooltip, footer, .terms-service');
+            trash.forEach(el => el.remove());
+
+            // 4. Form එකේ Validation අක්‍රිය කිරීම (Please fill out this field වැළැක්වීමට)
             const forms = document.querySelectorAll('form');
             forms.forEach(f => f.setAttribute('novalidate', 'true'));
-            
-            const inputs = document.querySelectorAll('input');
-            inputs.forEach(i => {
-                i.removeAttribute('required');
-                i.setAttribute('aria-required', 'false');
-            });
-
-            // බැනර් සහ අනවශ්‍ය Modals මකා දැමීම
-            const trash = document.querySelectorAll('.ant-tooltip, #onetrust-consent-sdk, a, footer, .terms-service');
-            trash.forEach(el => el.remove());
         });
 
-        // 3. නම ඇතුළත් කිරීමේ ප්‍රබලම ක්‍රමය (System-level Insertion)
-        console.log("නම ඇතුළත් කරමින්...");
-        const nameInput = 'input[name="inputname"]';
-        await page.waitForSelector(nameInput, { visible: true });
-        
-        await page.click(nameInput);
-        await new Promise(r => setTimeout(r, 1000));
+        // සැබෑ මනුෂ්‍යයෙකු ලෙස Keyboard එකෙන් තහවුරු කිරීම
+        await page.keyboard.press('Tab');
+        await new Promise(r => setTimeout(r, 2000));
+        await page.keyboard.type(' ', { delay: 100 });
 
-        // Browser එකේ අභ්‍යන්තර "InsertText" විධානය මගින් නම එන්නත් කිරීම
-        await page.evaluate((name) => {
-            const el = document.querySelector('input[name="inputname"]');
-            el.focus();
-            document.execCommand('insertText', false, name);
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-        }, 'Dasun');
-
-        await new Promise(r => setTimeout(r, 3000));
-
-        // 4. Join බොත්තම බලහත්කාරයෙන් Enable කර ක්ලික් කිරීම (The Forceful Join)
-        console.log("Join බොත්තම ඔබමින්...");
-        await page.evaluate(() => {
-            const joinBtn = Array.from(document.querySelectorAll('button')).find(b => 
-                b.innerText.toLowerCase().includes('join') && !b.innerText.toLowerCase().includes('sign')
-            );
-            
-            if (joinBtn) {
-                // බොත්තම Disable කරන හැම දේම අයින් කරන්න
-                joinBtn.disabled = false;
-                joinBtn.removeAttribute('disabled');
-                joinBtn.classList.remove('disabled');
-                joinBtn.style.pointerEvents = 'auto';
-                joinBtn.style.opacity = '1';
-                joinBtn.style.backgroundColor = '#0E71EB'; // නිල් පාට කරන්න
+        // 5. Join බොත්තම බලහත්කාරයෙන් ඔබන ලූපය (Force Click Loop)
+        console.log("Join බොත්තම බලහත්කාරයෙන් ඔබමින්...");
+        for (let i = 0; i < 10; i++) {
+            await page.evaluate(() => {
+                const joinBtn = Array.from(document.querySelectorAll('button')).find(b => 
+                    b.innerText.toLowerCase().includes('join') && !b.innerText.toLowerCase().includes('sign')
+                );
                 
-                // බලහත්කාරයෙන් ක්ලික් කරන්න
-                joinBtn.click();
-            }
-        });
+                if (joinBtn) {
+                    joinBtn.disabled = false;
+                    joinBtn.removeAttribute('disabled');
+                    joinBtn.classList.remove('disabled');
+                    joinBtn.style.backgroundColor = '#0E71EB'; // නිල් පාට කරන්න
+                    joinBtn.click();
+                }
+            });
+            await page.keyboard.press('Enter');
+            await new Promise(r => setTimeout(r, 5000)); // සෑම තත්පර 5කට වරක්ම බොත්තම ඔබයි
+        }
 
-        // Enter backup එකක් ලෙස ඔබන්න
-        await page.keyboard.press('Enter');
-
-        // 5. මීටින් එක ඇතුළත සියල්ල පිරිසිදු කරන ලූපය
+        // 6. මීටින් එක ඇතුළත UI පිරිසිදු කිරීම සහ Audio සම්බන්ධ කිරීම
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
@@ -113,7 +115,7 @@ async function run() {
         }, 5000);
 
     } catch (e) {
-        console.error("බරපතල දෝෂයකි:", e);
+        console.error("Critical Failure:", e);
     }
 }
 
