@@ -14,8 +14,7 @@ async function run() {
             '--disable-setuid-sandbox',
             '--disable-blink-features=AutomationControlled',
             '--window-size=1920,1080',
-            '--start-maximized',
-            '--disable-infobars'
+            '--start-maximized'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
@@ -23,92 +22,65 @@ async function run() {
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
 
-    // වෙනත් පිටුවලට (Terms/Privacy) හරවා යැවීම වැළැක්වීමේ Listener එක
-    page.on('framenavigated', frame => {
-        const url = frame.url();
-        if (url.includes('/terms') || url.includes('/privacy') || url.includes('/trust')) {
-            console.log("Redirect detected! මීටින් පේජ් එකට ආපසු යමින්...");
-            page.goto(targetUrl, { waitUntil: 'networkidle2' }).catch(() => {});
-        }
-    });
-
     try {
-        console.log("Zoom පේජ් එකට ඇතුළු වෙමින්...");
+        console.log("Zoom වෙත පිවිසෙමින්...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 1. පේජ් එක සම්පූර්ණයෙන් සූදානම් වීමට තත්පර 30ක් ලබා දෙන්න
-        console.log("පේජ් එක ලෝඩ් වන තෙක් තත්පර 30ක් රැඳී සිටියි...");
-        await new Promise(r => setTimeout(r, 30000));
+        // 1. පේජ් එක ලෝඩ් වීමට සෑහෙන වේලාවක් (තත්පර 40ක්) ලබා දෙන්න
+        console.log("Zoom පද්ධතිය සූදානම් වන තෙක් රැඳී සිටියි...");
+        await new Promise(r => setTimeout(r, 40000));
 
-        // 2. කරදරකාරී ලින්ක් සහ Cookie බැනර් මුලින්ම මකා දමන්න
+        // 2. කරදරකාරී Tooltips සහ ලින්ක් මකා දැමීම
         await page.evaluate(() => {
-            const elements = document.querySelectorAll('a, #onetrust-consent-sdk, footer, .terms-service');
-            elements.forEach(el => el.remove());
+            const tooltips = document.querySelectorAll('.ant-tooltip, .privacy-policy-banner, #onetrust-consent-sdk, a');
+            tooltips.forEach(el => el.remove());
         });
 
-        // 3. නම ඇතුළත් කිරීමේ "නොවරදින" ක්‍රියාවලිය (Guaranteed Human-Like Entry)
-        const nameInput = 'input[name="inputname"]';
-        await page.waitForSelector(nameInput, { visible: true, timeout: 30000 });
-
+        // 3. නම ඇතුළත් කිරීමේ "Magic" ක්‍රමය (Bypassing Zoom Validation)
         console.log("නම ඇතුළත් කරමින්...");
-        await page.click(nameInput); // මුලින්ම කොටුව Click කරන්න
-        await new Promise(r => setTimeout(r, 1000));
+        const inputTyped = await page.evaluate(async (nameToType) => {
+            const input = document.querySelector('input[name="inputname"]') || document.querySelector('input[type="text"]');
+            if (input) {
+                input.focus();
+                input.click();
+                // සැබෑ මනුෂ්‍යයෙකුගේ ක්‍රියාවක් ලෙස නම ඇතුළු කිරීමේ විධානය
+                document.execCommand('insertText', false, nameToType);
+                
+                // Zoom එකේ පද්ධතියට (React) නම ලැබුණු බව තහවුරු කිරීම
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+            }
+            return false;
+        }, 'Dasun');
 
-        // පවතින ඕනෑම දෙයක් සම්පූර්ණයෙන් මකා දමන්න
-        await page.keyboard.down('Control');
-        await page.keyboard.press('A');
-        await page.keyboard.up('Control');
-        await page.keyboard.press('Backspace');
+        if (inputTyped) {
+            console.log("නම සාර්ථකව පද්ධතියට ඇතුළු විය.");
+            await new Promise(r => setTimeout(r, 3000));
 
-        // 'Dasun' යන නම අකුරෙන් අකුර සැබෑ මනුෂ්‍යයෙකුගේ වේගයෙන් ටයිප් කිරීම
-        const myName = "Dasun";
-        for (const char of myName) {
-            await page.keyboard.type(char, { delay: 200 }); // අකුරක් අතර පමාව 200ms
-        }
-
-        // ටයිප් කළ පසු Tab එකක් ඔබන්න (Zoom එකේ Validation එක Trigger කිරීමට මෙය අත්‍යවශ්‍යයි)
-        await page.keyboard.press('Tab');
-        await new Promise(r => setTimeout(r, 2000));
-
-        // 4. නම නිවැරදිව කොටුවේ තිබේදැයි 100% ක් තහවුරු කරගැනීම
-        const isNameThere = await page.evaluate(() => {
-            const el = document.querySelector('input[name="inputname"]');
-            return el && el.value.length >= 5;
-        });
-
-        if (isNameThere) {
-            console.log("නම තහවුරු විය. දැන් Join බොත්තම එබීමට උත්සාහ කරයි...");
-            
-            // Join බොත්තම බලහත්කාරයෙන් Enable කර Click කිරීම
+            // 4. Join බොත්තම සක්‍රිය කර එය එබීම
             await page.evaluate(() => {
                 const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.toLowerCase().includes('join'));
                 if (btn) {
                     btn.disabled = false;
                     btn.classList.remove('disabled');
-                    btn.click(); // JS Click
+                    btn.click();
                 }
             });
 
-            // මවුස් එකෙන් (Physical) බොත්තම ඇති තැනට ගොස් Click කිරීමේ Backup ක්‍රමය
-            const btnPos = await page.evaluate(() => {
-                const b = Array.from(document.querySelectorAll('button')).find(btn => btn.innerText.toLowerCase().includes('join'));
-                if (b) {
-                    const { left, top, width, height } = b.getBoundingClientRect();
-                    return { x: left + width / 2, y: top + height / 2 };
-                }
-                return null;
-            });
-
-            if (btnPos) {
-                await page.mouse.click(btnPos.x, btnPos.y);
-            }
+            // අමතර ආරක්ෂාවට Keyboard එකෙන් Enter එබීම
+            await page.keyboard.press('Enter');
+            console.log("Join Button Pressed!");
         } else {
-            console.log("නම ටයිප් වීමේ දෝෂයකි. නැවත උත්සාහ කරයි...");
-            await page.keyboard.type('Dasun');
+            // Selector වැඩ නොකළොත් Tab ක්‍රමය (Old School)
+            console.log("Selectors failed. Using Tab sequence...");
+            await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
+            await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 800));
+            await page.keyboard.type('Dasun', { delay: 200 });
             await page.keyboard.press('Enter');
         }
 
-        // 5. මීටින් එක ඇතුළත UI පිරිසිදු කරන ලූපය
+        // 5. මීටින් එක ඇතුළත UI පිරිසිදු කිරීම සහ Audio සම්බන්ධ කිරීම
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
@@ -130,7 +102,7 @@ async function run() {
         }, 5000);
 
     } catch (e) {
-        console.error("විශේෂ දෝෂයකි:", e);
+        console.error("Critical Failure:", e);
     }
 }
 
