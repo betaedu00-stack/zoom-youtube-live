@@ -14,8 +14,7 @@ async function run() {
             '--disable-setuid-sandbox',
             '--disable-blink-features=AutomationControlled',
             '--window-size=1920,1080',
-            '--start-maximized',
-            '--disable-infobars'
+            '--start-maximized'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
@@ -23,79 +22,61 @@ async function run() {
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
 
-    // Bot detection මඟහැරීමට සැබෑ මනුෂ්‍යයෙකුගේ Browser එකක් ලෙස පෙනී සිටීම
-    await page.evaluateOnNewDocument(() => {
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
-    });
-
     try {
-        console.log("Navigating to Zoom...");
+        console.log("Zoom වෙත පිවිසෙමින්...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 1. පේජ් එක සම්පූර්ණයෙන් ලෝඩ් වන තෙක් තත්පර 20ක් රැඳී සිටීම
-        console.log("Waiting for Zoom to settle...");
-        await new Promise(r => setTimeout(r, 20000));
+        // 1. පේජ් එක ලෝඩ් වීමට සෑහෙන වේලාවක් (තත්පර 25ක්) ලබා දෙන්න
+        await new Promise(r => setTimeout(r, 25000));
 
-        // 2. නම ඇතුළත් කරන කොටුව (Input) සෙවීම සහ නම ටයිප් කිරීම
-        console.log("Attempting to find name field and type...");
-        const isTyped = await page.evaluate(() => {
-            // පේජ් එකේ ඇති සියලුම input tags පරීක්ෂා කිරීම
-            const inputs = Array.from(document.querySelectorAll('input'));
-            const nameBox = inputs.find(i => 
-                i.placeholder.includes('Name') || 
-                i.name === 'inputname' || 
-                i.id === 'inputname' ||
-                (i.type === 'text' && i.id !== 'meeting_number')
-            );
+        // 2. නම ඇතුළත් කරන කොටුව (Input) නිවැරදිව හඳුනාගෙන Click කර ටයිප් කිරීම
+        console.log("නම ඇතුළත් කරමින්...");
+        const inputSelector = 'input[name="inputname"], input#inputname, input.form-control';
+        
+        await page.waitForSelector('input', { visible: true, timeout: 30000 });
+        
+        // කොටුව Click කිරීම (Focus ලබා ගැනීමට)
+        await page.click('input');
+        await new Promise(r => setTimeout(r, 1000));
 
-            if (nameBox) {
-                nameBox.focus();
-                nameBox.value = 'Dasun';
-                // Zoom එකට නම ලැබුණු බව දැනුම් දීමට අවශ්‍ය Events ක්‍රියාත්මක කිරීම
-                nameBox.dispatchEvent(new Event('input', { bubbles: true }));
-                nameBox.dispatchEvent(new Event('change', { bubbles: true }));
-                return true;
-            }
-            return false;
+        // පවතින ඕනෑම දෙයක් මකා දමා "Dasun" ටයිප් කිරීම
+        await page.keyboard.down('Control');
+        await page.keyboard.press('A');
+        await page.keyboard.up('Control');
+        await page.keyboard.press('Backspace');
+
+        // අකුරෙන් අකුර ටයිප් කිරීම
+        await page.keyboard.type('Dasun', { delay: 200 });
+
+        // 3. නම ටයිප් වී ඇති බව තහවුරු කරගැනීම (Verification)
+        const typedValue = await page.evaluate(() => {
+            const input = document.querySelector('input');
+            return input ? input.value : '';
         });
 
-        // 3. යම් හෙයකින් ඉහත ක්‍රමය වැඩ නොකළොත් (Tab method as backup)
-        if (!isTyped) {
-            console.log("Selector failed, trying Tab method...");
+        if (typedValue === 'Dasun') {
+            console.log("නම සාර්ථකව ටයිප් විය. දැන් Join බොත්තම ඔබමු.");
+            await new Promise(r => setTimeout(r, 2000));
+
+            // 4. Join බොත්තම Click කිරීම
+            await page.evaluate(() => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const joinBtn = buttons.find(b => b.innerText.toLowerCase().includes('join'));
+                if (joinBtn) {
+                    joinBtn.disabled = false;
+                    joinBtn.click();
+                }
+            });
+        } else {
+            console.log("නම ටයිප් වී නැත. නැවත උත්සාහ කරමු...");
+            // Tab ක්‍රමය මගින් නැවත උත්සාහ කිරීම
             await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
             await page.keyboard.press('Tab'); await new Promise(r => setTimeout(r, 500));
             await page.keyboard.type('Dasun', { delay: 150 });
+            await page.keyboard.press('Enter');
         }
 
-        await new Promise(r => setTimeout(r, 3000));
-
-        // 4. Join බොත්තම බලහත්කාරයෙන් Enable කර Click කිරීම
-        console.log("Force-clicking Join button...");
-        await page.evaluate(() => {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            const joinBtn = buttons.find(b => b.innerText.toLowerCase().includes('join'));
-            
-            if (joinBtn) {
-                // බොත්තම අක්‍රිය කරන ඕනෑම දෙයක් ඉවත් කරන්න
-                joinBtn.removeAttribute('disabled');
-                joinBtn.disabled = false;
-                joinBtn.classList.remove('disabled');
-                joinBtn.style.opacity = "1";
-                joinBtn.style.pointerEvents = "auto";
-                
-                joinBtn.click(); // JavaScript Click
-            }
-        });
-
-        // 5. Bot detected පණිවිඩය ආවොත් එය DOM එකෙන් ඉවත් කිරීම (Bypass error)
-        await page.evaluate(() => {
-            const alerts = document.querySelectorAll('.zm-alert, .alert, #join-err-msg');
-            alerts.forEach(a => a.remove());
-        });
-
-        console.log("Execution finished. Monitoring UI...");
-
-        // 6. මීටින් එක ඇතුළත UI සැඟවීම සහ Audio සම්බන්ධ කිරීම
+        // 5. මීටින් එක තුළ UI පිරිසිදු කිරීමේ ලූපය
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
@@ -117,7 +98,7 @@ async function run() {
         }, 5000);
 
     } catch (e) {
-        console.error("Critical Failure:", e);
+        console.error("දෝෂයකි:", e);
     }
 }
 
