@@ -14,7 +14,7 @@ async function run() {
             '--disable-setuid-sandbox',
             '--disable-blink-features=AutomationControlled',
             '--window-size=1920,1080',
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            '--start-maximized'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
@@ -22,69 +22,65 @@ async function run() {
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
 
+    // 1. වෙනත් පිටුවලට හරවා යැවීම වැළැක්වීමේ ආරක්ෂක පියවර (Anti-Redirect)
+    page.on('framenavigated', frame => {
+        const url = frame.url();
+        if (url.includes('/terms') || url.includes('/privacy') || url.includes('/trust')) {
+            console.log("Redirect detected! Going back to meeting...");
+            page.goto(targetUrl, { waitUntil: 'networkidle2' }).catch(() => {});
+        }
+    });
+
     try {
-        console.log("Zoom එකට ඇතුළු වෙමින්...");
+        console.log("Zoom වෙත පිවිසෙමින්...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 1. පේජ් එක ලෝඩ් වෙනකම් තත්පර 30ක් ඉවසමු (හුඟක් වෙලාවට පරක්කු වෙන්නේ ඒකයි)
-        await new Promise(r => setTimeout(r, 30000));
-
-        // 2. නම ඇතුළත් කරන කොටුව හොයාගන්නා තෙක් උත්සාහ කිරීම (Retry Loop)
-        let nameEntered = false;
-        for (let i = 0; i < 5; i++) {
-            console.log(`නම ඇතුළත් කිරීමට උත්සාහ කරයි (වාරය: ${i+1})...`);
-            
-            nameEntered = await page.evaluate(async () => {
-                const input = document.querySelector('input[name="inputname"]') || 
-                              document.querySelector('input[id="inputname"]') ||
-                              document.querySelector('input[type="text"]');
-                
-                if (input) {
-                    input.focus();
-                    input.click();
-                    input.value = ""; // කලින් තිබුණු දේවල් මකන්න
-                    return true;
-                }
-                return false;
+        // 2. කරදරකාරී Cookies සහ අනවශ්‍ය ලින්ක් මකා දැමීම
+        setInterval(async () => {
+            await page.evaluate(() => {
+                // 'Terms of Service' සහ 'Privacy' ලින්ක් සම්පූර්ණයෙන් මකා දමන්න
+                const links = document.querySelectorAll('a');
+                links.forEach(link => {
+                    if (link.href.includes('terms') || link.href.includes('privacy')) {
+                        link.remove();
+                    }
+                });
+                // Cookie banner එක මකන්න
+                const cookieBanner = document.querySelector('#onetrust-consent-sdk');
+                if (cookieBanner) cookieBanner.remove();
             });
+        }, 2000);
 
-            if (nameEntered) {
-                // සැබෑ මනුස්සයෙක් වගේ අකුරෙන් අකුර ටයිප් කිරීම
-                await page.keyboard.type('Dasun', { delay: 300 }); 
-                // Zoom එකට නම ලැබුණා කියලා තහවුරු කරන්න Tab එකක් ඔබමු
-                await page.keyboard.press('Tab');
-                await new Promise(r => setTimeout(r, 2000));
-                break;
+        await new Promise(r => setTimeout(r, 25000));
+
+        // 3. නම ඇතුළත් කිරීමේ ක්‍රියාවලිය
+        console.log("නම ඇතුළත් කරමින්...");
+        const inputTyped = await page.evaluate(() => {
+            const el = document.querySelector('input[name="inputname"]') || document.querySelector('input');
+            if (el) {
+                el.focus();
+                el.value = 'Dasun';
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                return true;
             }
-            await new Promise(r => setTimeout(r, 5000));
-        }
-
-        // 3. නම හරියට වැටිලද කියලා චෙක් කිරීම
-        const finalCheck = await page.evaluate(() => {
-            const el = document.querySelector('input');
-            return el ? el.value : '';
+            return false;
         });
 
-        if (finalCheck.includes('Dasun')) {
-            console.log("නම සාර්ථකයි! දැන් Join වෙමු.");
+        if (inputTyped) {
+            await page.keyboard.press('Tab');
+            await new Promise(r => setTimeout(r, 2000));
             
-            // 4. Join බොත්තම සොයා එය බලහත්කාරයෙන් එබීම
+            // 4. Join බොත්තම එබීම
             await page.evaluate(() => {
-                const buttons = Array.from(document.querySelectorAll('button'));
-                const joinBtn = buttons.find(b => b.innerText.toLowerCase().includes('join'));
-                if (joinBtn) {
-                    joinBtn.disabled = false;
-                    joinBtn.click();
+                const btn = Array.from(document.querySelectorAll('button')).find(b => b.innerText.toLowerCase().includes('join'));
+                if (btn) {
+                    btn.disabled = false;
+                    btn.click();
                 }
             });
-        } else {
-            console.log("නම වැටුණේ නැහැ. අන්තිම උත්සාහය ලෙස Tab ක්‍රමය භාවිතා කරයි...");
-            await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
-            await page.keyboard.type('Dasun', { delay: 200 });
-            await page.keyboard.press('Enter');
         }
 
-        // 5. මීටින් එක ඇතුළත UI පිරිසිදු කරන ලූපය
+        // 5. මීටින් එක ඇතුළත UI එක පිරිසිදු කිරීම
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
@@ -97,16 +93,16 @@ async function run() {
                     let style = document.getElementById('beta-style') || document.createElement('style');
                     style.id = 'beta-style'; style.innerHTML = css; document.head.appendChild(style);
 
-                    const btn = Array.from(document.querySelectorAll('button')).find(b => 
+                    const audioBtn = Array.from(document.querySelectorAll('button')).find(b => 
                         b.innerText.includes('Computer Audio') || b.innerText.includes('Join Audio')
                     );
-                    if (btn) btn.click();
+                    if (audioBtn) audioBtn.click();
                 });
             } catch (e) {}
         }, 5000);
 
     } catch (e) {
-        console.error("දෝෂයක් පවතී:", e);
+        console.error("Critical Failure:", e);
     }
 }
 
