@@ -12,76 +12,78 @@ async function run() {
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--disable-blink-features=AutomationControlled',
-            '--window-size=1920,1080'
+            '--disable-blink-features=AutomationControlled', // බොට් එකක් බව හැඟවෙන ප්‍රධාන ලක්ෂණය අක්‍රිය කරයි
+            '--disable-infobars',
+            '--window-size=1920,1080',
+            '--start-maximized'
         ],
         ignoreDefaultArgs: ['--enable-automation']
     });
 
     const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
+
+    // 1. Browser එකේ ඇති සියලුම 'Bot' ලක්ෂණ සැඟවීම
+    await page.evaluateOnNewDocument(() => {
+        // WebDriver property එක ඉවත් කිරීම
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+        // Chrome object එකක් ඇති බව පෙන්වීම
+        window.chrome = { runtime: {} };
+        // Plugins සහ Languages සැබෑ ලෙස පෙන්වීම
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+    });
 
     try {
-        console.log("Navigating to:", targetUrl);
+        console.log("Navigating to Zoom with Ultimate Stealth...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // 1. පේජ් එක ලෝඩ් වන තෙක් රැඳී සිටින්න
-        await new Promise(r => setTimeout(r, 20000));
-
-        // 2. නම ඇතුළත් කිරීම සහ Events Trigger කිරීම
-        console.log("Entering Name...");
-        await page.evaluate(() => {
-            const input = document.querySelector('input[name="inputname"]') || document.querySelector('input[type="text"]');
-            if (input) {
-                input.focus();
-                input.value = 'Dasun';
-                // Zoom එකට නම ලැබුණු බව දැනුම් දීමට අවශ්‍ය සියලුම Events ක්‍රියාත්මක කිරීම
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-                input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
-                input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-            }
-        });
-
-        // අමතර ආරක්ෂාවට Keyboard එකෙන්ද ටයිප් කරන්න
-        await page.keyboard.type(' ', { delay: 100 }); 
+        // 2. සැබෑ මනුෂ්‍යයෙකු ලෙස Mouse එක චලනය කිරීම
+        await page.mouse.move(100, 100);
         await new Promise(r => setTimeout(r, 2000));
+        await page.mouse.move(400, 300);
 
-        // 3. Join බොත්තම බලහත්කාරයෙන් සක්‍රිය කර ක්ලික් කිරීම (The Fix)
-        console.log("Force enabling Join button...");
+        // 3. පේජ් එක ලෝඩ් වන තෙක් තත්පර 15ක් රැඳී සිටින්න
+        await new Promise(r => setTimeout(r, 15000));
+
+        // 4. යම් හෙයකින් Bot Warning එක ආවොත් එය DOM එකෙන් බලහත්කාරයෙන් ඉවත් කිරීම
         await page.evaluate(() => {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            const joinBtn = buttons.find(b => b.innerText.toLowerCase().includes('join'));
+            const warning = document.querySelector('.zm-alert') || document.querySelector('.alert-warning');
+            if (warning) warning.remove();
             
-            if (joinBtn) {
-                // බොත්තම අක්‍රිය කරන Class සහ Attributes ඉවත් කිරීම
-                joinBtn.removeAttribute('disabled');
-                joinBtn.classList.remove('disabled');
-                joinBtn.disabled = false;
-                joinBtn.style.opacity = "1";
-                joinBtn.style.pointerEvents = "auto";
-                
-                // ක්ලික් කිරීම
-                joinBtn.click();
-                console.log("Join button clicked via script.");
+            // "Sign in to join" බොත්තම වෙනුවට සාමාන්‍ය Join බොත්තම පෙන්වීමට උත්සාහ කිරීම
+            const signBtn = document.querySelector('.zm-btn--primary');
+            if (signBtn && signBtn.innerText.includes('Sign in')) {
+                signBtn.innerText = 'Join';
             }
         });
 
-        // 4. යම් හෙයකින් ඉහත ක්‍රමය මදි වුවහොත් Mouse එකෙන් බොත්තම ක්ලික් කිරීම
-        const joinButtonCoords = await page.evaluate(() => {
-            const b = Array.from(document.querySelectorAll('button')).find(btn => btn.innerText.toLowerCase().includes('join'));
-            if (b) {
-                const { left, top, width, height } = b.getBoundingClientRect();
-                return { x: left + width / 2, y: top + height / 2 };
-            }
-            return null;
-        });
-
-        if (joinButtonCoords) {
-            await page.mouse.click(joinButtonCoords.x, joinButtonCoords.y);
+        // 5. නම ඇතුළත් කිරීම (Dasun)
+        console.log("Entering Name...");
+        const inputSelector = 'input[name="inputname"]';
+        await page.waitForSelector(inputSelector, { visible: true });
+        await page.click(inputSelector);
+        
+        // අකුරෙන් අකුර සැබෑ ලෙස ටයිප් කිරීම
+        const name = "Dasun";
+        for (let char of name) {
+            await page.keyboard.type(char, { delay: 200 });
         }
 
-        // 5. මීටින් එක තුළ UI පිරිසිදු කිරීම
+        await new Promise(r => setTimeout(r, 2000));
+
+        // 6. Join බොත්තම ක්ලික් කිරීම
+        await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button'));
+            const joinBtn = btns.find(b => b.innerText.toLowerCase().includes('join'));
+            if (joinBtn) {
+                joinBtn.disabled = false;
+                joinBtn.click();
+            }
+        });
+
+        console.log("Join Attempted!");
+
+        // 7. මීටින් එක තුළ UI පිරිසිදු කිරීමේ ලූපය
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
