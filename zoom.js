@@ -4,9 +4,15 @@ puppeteer.use(StealthPlugin());
 
 async function run() {
     const zoomUrl = process.env.ZOOM_URL;
-    // Telegram එකෙන් එන නම සහ ඊමේල් එක
-    const zoomName = process.env.ZOOM_NAME || 'β Edu Live'; 
-    const zoomEmail = process.env.ZOOM_EMAIL || ''; 
+    
+    // Bot එකෙන් දත්ත ලැබුනේ නැත්නම් Default අගයන් යෙදීම
+    const zoomName = (process.env.ZOOM_NAME && process.env.ZOOM_NAME.trim() !== '') 
+        ? process.env.ZOOM_NAME 
+        : 'Dasun';
+        
+    const zoomEmail = (process.env.ZOOM_EMAIL && process.env.ZOOM_EMAIL.trim() !== '') 
+        ? process.env.ZOOM_EMAIL 
+        : 'betaedu00@gmail.com';
 
     let targetUrl = zoomUrl.replace('/j/', '/wc/join/').replace('/w/', '/wc/join/');
 
@@ -28,7 +34,7 @@ async function run() {
 
     const page = await browser.newPage();
     
-    // Zoom එක රවට්ටන බලවත්ම Spoofing කොටස
+    // Zoom එක රවට්ටන Spoofing කොටස
     await page.evaluateOnNewDocument(() => {
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
         Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
@@ -51,7 +57,7 @@ async function run() {
         // පේජ් එක ලෝඩ් වීමට තත්පර 30ක් ලබා දෙන්න
         await new Promise(r => setTimeout(r, 30000));
 
-        // 5. නම සහ Email ඇතුළත් කිරීමේ "Bulletproof" ක්‍රමය
+        // 5. නම සහ Email ඇතුළත් කිරීම
         await page.evaluate(({ name, email }) => {
             // Name Field
             const nameField = document.querySelector('input[name="inputname"]') || document.querySelector('input[type="text"]');
@@ -63,8 +69,8 @@ async function run() {
                 nameField.dispatchEvent(new Event('change', { bubbles: true }));
             }
             
-            // Email Field (Webinar/Protected සඳහා)
-            if (email !== "") {
+            // Email Field (Webinar/Protected Zoom මීටින් සඳහා)
+            if (email) {
                 const emailField = document.querySelector('input[name="inputemail"]') || document.querySelector('input[type="email"]');
                 if (emailField) {
                     emailField.focus();
@@ -78,14 +84,14 @@ async function run() {
             // අනවශ්‍ය දේවල් මකන්න
             const trash = document.querySelectorAll('a, #onetrust-consent-sdk, footer, .zm-modal');
             trash.forEach(el => el.remove());
-        }, { name: zoomName, email: zoomEmail }); // Variables pass කිරීම
+        }, { name: zoomName, email: zoomEmail });
 
         await new Promise(r => setTimeout(r, 2000));
         await page.keyboard.press('Tab');
         await new Promise(r => setTimeout(r, 1000));
-        await page.keyboard.type(' ', { delay: 100 }); // සැබෑ Keypress එකක් Simulate කිරීම
+        await page.keyboard.type(' ', { delay: 100 });
 
-        // 6. Join බොත්තම බලහත්කාරයෙන් ඔබන ලූපය
+        // 6. Join බොත්තම ඔබන ලූපය
         console.log("Join බොත්තම ඔබමින්...");
         for (let i = 0; i < 5; i++) {
             await page.evaluate(() => {
