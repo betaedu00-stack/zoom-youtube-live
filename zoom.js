@@ -4,6 +4,10 @@ puppeteer.use(StealthPlugin());
 
 async function run() {
     const zoomUrl = process.env.ZOOM_URL;
+    // Telegram එකෙන් එන නම සහ ඊමේල් එක
+    const zoomName = process.env.ZOOM_NAME || 'β Edu Live'; 
+    const zoomEmail = process.env.ZOOM_EMAIL || ''; 
+
     let targetUrl = zoomUrl.replace('/j/', '/wc/join/').replace('/w/', '/wc/join/');
 
     const browser = await puppeteer.launch({
@@ -26,17 +30,10 @@ async function run() {
     
     // Zoom එක රවට්ටන බලවත්ම Spoofing කොටස
     await page.evaluateOnNewDocument(() => {
-        // 1. Webdriver සැඟවීම
         Object.defineProperty(navigator, 'webdriver', { get: () => false });
-        
-        // 2. Hardware තොරතුරු Spoof කිරීම
         Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
         Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 4 });
-        
-        // 3. Chrome Runtime එක ඇති බව පෙන්වීම
         window.chrome = { runtime: {} };
-        
-        // 4. Permissions Spoof කිරීම
         const originalQuery = window.navigator.permissions.query;
         window.navigator.permissions.query = (parameters) => (
             parameters.name === 'notifications' ?
@@ -51,31 +48,42 @@ async function run() {
         console.log("Zoom වෙත පිවිසෙමින්...");
         await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 90000 });
 
-        // පේජ් එක ලෝඩ් වීමට තත්පර 35ක් ලබා දෙන්න
-        await new Promise(r => setTimeout(r, 35000));
+        // පේජ් එක ලෝඩ් වීමට තත්පර 30ක් ලබා දෙන්න
+        await new Promise(r => setTimeout(r, 30000));
 
-        // 5. නම ඇතුළත් කිරීමේ "Bulletproof" ක්‍රමය
-        await page.evaluate(() => {
-            const nameField = document.querySelector('input[name="inputname"]') || document.querySelector('input');
+        // 5. නම සහ Email ඇතුළත් කිරීමේ "Bulletproof" ක්‍රමය
+        await page.evaluate(({ name, email }) => {
+            // Name Field
+            const nameField = document.querySelector('input[name="inputname"]') || document.querySelector('input[type="text"]');
             if (nameField) {
                 nameField.focus();
-                // React/Angular ඕනෑම එකක State එක බලහත්කාරයෙන් Update කිරීම
                 const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-                nativeSetter.call(nameField, "Dasun");
+                nativeSetter.call(nameField, name);
                 nameField.dispatchEvent(new Event('input', { bubbles: true }));
                 nameField.dispatchEvent(new Event('change', { bubbles: true }));
-                nameField.dispatchEvent(new Event('blur', { bubbles: true }));
+            }
+            
+            // Email Field (Webinar/Protected සඳහා)
+            if (email !== "") {
+                const emailField = document.querySelector('input[name="inputemail"]') || document.querySelector('input[type="email"]');
+                if (emailField) {
+                    emailField.focus();
+                    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+                    nativeSetter.call(emailField, email);
+                    emailField.dispatchEvent(new Event('input', { bubbles: true }));
+                    emailField.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             }
             
             // අනවශ්‍ය දේවල් මකන්න
             const trash = document.querySelectorAll('a, #onetrust-consent-sdk, footer, .zm-modal');
             trash.forEach(el => el.remove());
-        });
+        }, { name: zoomName, email: zoomEmail }); // Variables pass කිරීම
 
         await new Promise(r => setTimeout(r, 2000));
         await page.keyboard.press('Tab');
         await new Promise(r => setTimeout(r, 1000));
-        await page.keyboard.type(' ', { delay: 100 }); // සැබෑ Keypress එකක්
+        await page.keyboard.type(' ', { delay: 100 }); // සැබෑ Keypress එකක් Simulate කිරීම
 
         // 6. Join බොත්තම බලහත්කාරයෙන් ඔබන ලූපය
         console.log("Join බොත්තම ඔබමින්...");
@@ -93,7 +101,7 @@ async function run() {
             await new Promise(r => setTimeout(r, 3000));
         }
 
-        // මීටින් එක ඇතුළත Cleanup
+        // මීටින් එක ඇතුළත Cleanup හා Audio Connect කිරීම
         setInterval(async () => {
             try {
                 await page.evaluate(() => {
