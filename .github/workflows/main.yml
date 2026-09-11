@@ -2,7 +2,7 @@ name: Zoom to YouTube Stream
 
 on:
   repository_dispatch:
-    types: [start_stream] # බොට් එකෙන් එවන signal එක
+    types: [start_stream]
   workflow_dispatch:
 
 jobs:
@@ -14,14 +14,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set Zoom URL
+      - name: Set Zoom Variables
         run: |
-          # බොට් එකෙන් එවපු ලින්ක් එක හෝ secret එකෙන් ලින්ක් එක තෝරා ගැනීම
-          if [ "${{ github.event.client_payload.zoom_url }}" != "" ]; then
-            echo "ZOOM_URL=${{ github.event.client_payload.zoom_url }}" >> $GITHUB_ENV
-          else
-            echo "ZOOM_URL=${{ secrets.ZOOM_URL }}" >> $GITHUB_ENV
-          fi
+          echo "ZOOM_URL=${{ github.event.client_payload.zoom_url }}" >> $GITHUB_ENV
+          echo "ZOOM_NAME=${{ github.event.client_payload.zoom_name }}" >> $GITHUB_ENV
+          echo "ZOOM_EMAIL=${{ github.event.client_payload.zoom_email }}" >> $GITHUB_ENV
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -45,6 +42,8 @@ jobs:
       - name: Start Stream
         env:
           ZOOM_URL: ${{ env.ZOOM_URL }}
+          ZOOM_NAME: ${{ env.ZOOM_NAME }}
+          ZOOM_EMAIL: ${{ env.ZOOM_EMAIL }}
           YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
         run: |
           Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
