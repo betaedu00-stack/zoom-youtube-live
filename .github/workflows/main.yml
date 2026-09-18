@@ -3,63 +3,230 @@ name: Zoom to YouTube Stream
 on:
   repository_dispatch:
     types: [start_stream]
+
   workflow_dispatch:
 
 jobs:
+
   stream:
+
     runs-on: ubuntu-latest
+
     timeout-minutes: 360
 
     steps:
+
+      # ==========================================
+      # Checkout
+      # ==========================================
+
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+
+      # ==========================================
+      # Set Variables
+      # ==========================================
 
       - name: Set Zoom Variables
         run: |
+
           echo "ZOOM_URL=${{ github.event.client_payload.zoom_url }}" >> $GITHUB_ENV
+
           echo "ZOOM_NAME=${{ github.event.client_payload.zoom_name }}" >> $GITHUB_ENV
+
           echo "ZOOM_EMAIL=${{ github.event.client_payload.zoom_email }}" >> $GITHUB_ENV
 
+          echo "CHAT_ID=${{ github.event.client_payload.chat_id }}" >> $GITHUB_ENV
+
+
+      # ==========================================
+      # Node.js
+      # ==========================================
+
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
+
         with:
-          node-version: 18
+          node-version: 20
+
+
+      # ==========================================
+      # Install Chrome + Display + Audio
+      # ==========================================
 
       - name: Install Tools
         run: |
+
           sudo apt-get update
-          sudo apt-get install -y wget gnupg
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+
+          sudo apt-get install -y \
+            wget \
+            gnupg \
+            xvfb \
+            ffmpeg \
+            pulseaudio \
+            fluxbox \
+            x11-utils \
+            ca-certificates
+
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub \
+            | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+            | sudo tee /etc/apt/sources.list.d/google-chrome.list
+
           sudo apt-get update
-          sudo apt-get install -y google-chrome-stable xvfb ffmpeg pulseaudio fluxbox
+
+          sudo apt-get install -y google-chrome-stable
+
+
+      # ==========================================
+      # Node Dependencies
+      # ==========================================
 
       - name: Install Dependencies
-        env:
-          PUPPETEER_SKIP_DOWNLOAD: 'true'
-        run: npm install puppeteer-extra puppeteer-extra-plugin-stealth puppeteer
 
-      - name: Start Stream
         env:
-          ZOOM_URL: ${{ env.ZOOM_URL }}
-          ZOOM_NAME: ${{ env.ZOOM_NAME }}
-          ZOOM_EMAIL: ${{ env.ZOOM_EMAIL }}
-          YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+
         run: |
-          Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
-          export DISPLAY=:99
-          for i in {1..10}; do xset -q -display :99 >/dev/null 2>&1 && break || sleep 1; done
-          fluxbox &
+
+          npm install puppeteer@21 puppeteer-extra puppeteer-extra-plugin-stealth form-data
+
+
+      # ==========================================
+      # Start Virtual Display
+      # ==========================================
+
+      - name: Start Display and Audio
+
+        run: |
+
+          Xvfb :99 \
+            -screen 0 1920x1080x24 \
+            -ac \
+            +extension GLX \
+            +render \
+            -noreset &
+
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+
           sleep 5
-          pulseaudio -D --exit-idle-time=-1
-          pacmd load-module module-virtual-sink sink_name=vss
+
+          fluxbox &
+
+          sleep 5
+
+          pulseaudio \
+            -D \
+            --exit-idle-time=-1 \
+            --system=false
+
+          sleep 5
+
+          pacmd load-module module-null-sink \
+            sink_name=vss \
+            sink_properties=device.description=ZoomVirtualAudio
+
           pacmd set-default-sink vss
 
-          node zoom.js &
-          sleep 60
+          pactl list short sinks
 
-          ffmpeg -f x11grab -draw_mouse 0 -video_size 1920x1080 -i :99 \
-          -f pulse -i default \
-          -c:v libx264 -preset veryfast -b:v 3000k -maxrate 3000k -bufsize 6000k \
-          -pix_fmt yuv420p -g 60 -c:a aac -b:a 128k -ar 44100 \
-          -f flv "rtmp://a.rtmp.youtube.com/live2/${YOUTUBE_STREAM_KEY}"
+
+      # ==========================================
+      # Start Zoom Browser
+      # ==========================================
+
+      - name: Start Zoom Automation
+
+        env:
+
+          ZOOM_URL: ${{ env.ZOOM_URL }}
+
+          ZOOM_NAME: ${{ env.ZOOM_NAME }}
+
+          ZOOM_EMAIL: ${{ env.ZOOM_EMAIL }}
+
+          CHAT_ID: ${{ env.CHAT_ID }}
+
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+          GH_REPO: ${{ secrets.GH_REPO }}
+
+        run: |
+
+          node zoom.js > zoom.log 2>&1 &
+
+          echo $! > zoom.pid
+
+          sleep 30
+
+
+      # ==========================================
+      # Start YouTube Stream
+      # ==========================================
+
+      - name: Start YouTube Stream
+
+        env:
+
+          YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
+
+        run: |
+
+          if [ -z "$YOUTUBE_STREAM_KEY" ]; then
+            echo "ERROR: YOUTUBE_STREAM_KEY is missing."
+            exit 1
+          fi
+
+          echo "Starting FFmpeg..."
+
+          ffmpeg \
+            -f x11grab \
+            -draw_mouse 0 \
+            -video_size 1920x1080 \
+            -framerate 30 \
+            -i :99.0 \
+            -f pulse \
+            -i vss.monitor \
+            -c:v libx264 \
+            -preset veryfast \
+            -tune zerolatency \
+            -b:v 3000k \
+            -maxrate 3000k \
+            -bufsize 6000k \
+            -pix_fmt yuv420p \
+            -g 60 \
+            -c:a aac \
+            -b:a 128k \
+            -ar 44100 \
+            -f flv \
+            "rtmp://a.rtmp.youtube.com/live2/${YOUTUBE_STREAM_KEY}"
+
+
+      # ==========================================
+      # Debug Logs
+      # ==========================================
+
+      - name: Upload Logs
+
+        if: always()
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: zoom-debug-logs
+
+          path: |
+
+            zoom.log
+
+            /tmp/zoom_current.png
+
+            /tmp/zoom_error.png
+
+          if-no-files-found: ignore
