@@ -1,10 +1,14 @@
 {
   "name": "zoom-to-youtube",
-  "version": "1.0.0",
-  "description": "Zoom to YouTube Live via GitHub Actions",
+  "version": "2.0.0",
+  "description": "Zoom to YouTube Live automation",
   "main": "zoom.js",
+  "scripts": {
+    "start": "node zoom.js"
+  },
   "dependencies": {
-    "puppeteer": "^21.0.0",
+    "form-data": "^4.0.0",
+    "puppeteer": "^21.11.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
