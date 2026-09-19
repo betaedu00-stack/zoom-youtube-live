@@ -1,195 +1,325 @@
-name: Zoom to YouTube Stream
+name: Zoom to YouTube Live
 
 on:
   repository_dispatch:
-    types: [start_stream]
+    types:
+      - start_stream
 
   workflow_dispatch:
+    inputs:
+      zoom_url:
+        description: "Zoom meeting/webinar URL"
+        required: true
+        type: string
+
+      name:
+        description: "Name"
+        required: false
+        type: string
+
+      email:
+        description: "Email"
+        required: false
+        type: string
+
+      chat_id:
+        description: "Telegram Chat ID"
+        required: false
+        type: string
+
 
 jobs:
 
   stream:
-
     runs-on: ubuntu-latest
-
     timeout-minutes: 360
+
+    env:
+      DISPLAY: :99
+
+      ZOOM_URL: ${{ github.event.client_payload.zoom_url || inputs.zoom_url }}
+      NAME: ${{ github.event.client_payload.name || inputs.name }}
+      EMAIL: ${{ github.event.client_payload.email || inputs.email }}
+      CHAT_ID: ${{ github.event.client_payload.chat_id || inputs.chat_id }}
+
+      TG_TOKEN: ${{ secrets.TG_TOKEN }}
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      GH_REPO: ${{ secrets.GH_REPO }}
+
+      YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
+
 
     steps:
 
-      # ==========================================
-      # Checkout
-      # ==========================================
+      # ======================================================
+      # CHECKOUT
+      # ======================================================
 
       - name: Checkout Code
         uses: actions/checkout@v4
 
 
-      # ==========================================
-      # Set Variables
-      # ==========================================
-
-      - name: Set Zoom Variables
-        run: |
-
-          echo "ZOOM_URL=${{ github.event.client_payload.zoom_url }}" >> $GITHUB_ENV
-
-          echo "ZOOM_NAME=${{ github.event.client_payload.zoom_name }}" >> $GITHUB_ENV
-
-          echo "ZOOM_EMAIL=${{ github.event.client_payload.zoom_email }}" >> $GITHUB_ENV
-
-          echo "CHAT_ID=${{ github.event.client_payload.chat_id }}" >> $GITHUB_ENV
-
-
-      # ==========================================
-      # Node.js
-      # ==========================================
+      # ======================================================
+      # NODE.JS
+      # ======================================================
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
-
         with:
           node-version: 20
+          cache: npm
 
 
-      # ==========================================
-      # Install Chrome + Display + Audio
-      # ==========================================
+      # ======================================================
+      # INSTALL TOOLS
+      # ======================================================
 
       - name: Install Tools
+        shell: bash
         run: |
 
           sudo apt-get update
 
-sudo apt-get install -y \
-    wget \
-    gnupg \
-    xvfb \
-    ffmpeg \
-    pulseaudio \
-    fluxbox \
-    x11-utils \
-    ca-certificates
-
-wget -q https://dl.google.com/linux/linux_signing_key.pub \
-    -O /tmp/google-chrome-key.pub
-
-sudo gpg --batch --yes --no-tty \
-    --dearmor \
-    -o /usr/share/keyrings/google-chrome.gpg \
-    /tmp/google-chrome-key.pub
-
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-    | sudo tee /etc/apt/sources.list.d/google-chrome.list
-
-sudo apt-get update
-
-sudo apt-get install -y google-chrome-stable
+          sudo apt-get install -y \
+            wget \
+            gnupg \
+            xvfb \
+            ffmpeg \
+            pulseaudio \
+            fluxbox \
+            x11-utils \
+            ca-certificates
 
 
-      # ==========================================
-      # Node Dependencies
-      # ==========================================
+          # --------------------------------------------------
+          # Google Chrome GPG key
+          # --------------------------------------------------
+
+          wget -q \
+            https://dl.google.com/linux/linux_signing_key.pub \
+            -O /tmp/google-chrome-key.pub
+
+
+          sudo gpg \
+            --batch \
+            --yes \
+            --no-tty \
+            --dearmor \
+            -o /usr/share/keyrings/google-chrome.gpg \
+            /tmp/google-chrome-key.pub
+
+
+          # --------------------------------------------------
+          # Google Chrome repository
+          # --------------------------------------------------
+
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+            | sudo tee /etc/apt/sources.list.d/google-chrome.list
+
+
+          # --------------------------------------------------
+          # Install Chrome
+          # --------------------------------------------------
+
+          sudo apt-get update
+
+          sudo apt-get install -y google-chrome-stable
+
+
+          # --------------------------------------------------
+          # Check installations
+          # --------------------------------------------------
+
+          google-chrome --version
+
+          node --version
+
+          npm --version
+
+          ffmpeg -version | head -n 1
+
+
+      # ======================================================
+      # INSTALL DEPENDENCIES
+      # ======================================================
 
       - name: Install Dependencies
-
-        env:
-          PUPPETEER_SKIP_DOWNLOAD: "true"
-
+        shell: bash
         run: |
 
-          npm install puppeteer@21 puppeteer-extra puppeteer-extra-plugin-stealth form-data
+          npm install
 
 
-      # ==========================================
-      # Start Virtual Display
-      # ==========================================
+      # ======================================================
+      # START DISPLAY AND AUDIO
+      # ======================================================
 
       - name: Start Display and Audio
-
+        shell: bash
         run: |
+
+          # --------------------------------------------------
+          # Virtual Display
+          # --------------------------------------------------
 
           Xvfb :99 \
             -screen 0 1920x1080x24 \
             -ac \
-            +extension GLX \
-            +render \
-            -noreset &
+            +extension RANDR \
+            > /tmp/xvfb.log 2>&1 &
 
-          echo "DISPLAY=:99" >> $GITHUB_ENV
 
-          sleep 5
+          sleep 3
 
-          fluxbox &
 
-          sleep 5
+          # --------------------------------------------------
+          # Window Manager
+          # --------------------------------------------------
+
+          fluxbox \
+            > /tmp/fluxbox.log 2>&1 &
+
+
+          # --------------------------------------------------
+          # PulseAudio
+          # --------------------------------------------------
 
           pulseaudio \
-            -D \
+            --start \
             --exit-idle-time=-1 \
-            --system=false
+            --system=false \
+            > /tmp/pulseaudio.log 2>&1 || true
 
-          sleep 5
 
-          pacmd load-module module-null-sink \
+          sleep 3
+
+
+          # --------------------------------------------------
+          # Virtual Audio Sink
+          # --------------------------------------------------
+
+          pactl load-module module-null-sink \
             sink_name=vss \
-            sink_properties=device.description=ZoomVirtualAudio
-
-          pacmd set-default-sink vss
-
-          pactl list short sinks
+            sink_properties=device.description=VirtualSink || true
 
 
-      # ==========================================
-      # Start Zoom Browser
-      # ==========================================
+          # --------------------------------------------------
+          # Set Virtual Sink as default
+          # --------------------------------------------------
+
+          pactl set-default-sink vss || true
+
+
+          # --------------------------------------------------
+          # Check display/audio
+          # --------------------------------------------------
+
+          echo "DISPLAY=$DISPLAY"
+
+          pactl info || true
+
+          pactl list short sinks || true
+
+
+      # ======================================================
+      # START ZOOM AUTOMATION
+      # ======================================================
 
       - name: Start Zoom Automation
-
-        env:
-
-          ZOOM_URL: ${{ env.ZOOM_URL }}
-
-          ZOOM_NAME: ${{ env.ZOOM_NAME }}
-
-          ZOOM_EMAIL: ${{ env.ZOOM_EMAIL }}
-
-          CHAT_ID: ${{ env.CHAT_ID }}
-
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
-          GH_REPO: ${{ secrets.GH_REPO }}
-
+        shell: bash
         run: |
 
-          node zoom.js > zoom.log 2>&1 &
+          echo "Starting Zoom automation..."
 
-          echo $! > zoom.pid
+          echo "Zoom URL:"
+          echo "$ZOOM_URL"
+
+          echo "Name:"
+          echo "$NAME"
+
+          echo "Email:"
+          echo "$EMAIL"
+
+          echo "Chat ID:"
+          echo "$CHAT_ID"
+
+
+          # --------------------------------------------------
+          # Start Zoom automation
+          # --------------------------------------------------
+
+          node zoom.js \
+            > zoom.log 2>&1 &
+
+
+          ZOOM_PID=$!
+
+          echo "Zoom PID: $ZOOM_PID"
+
+          echo "$ZOOM_PID" > zoom.pid
+
+
+          # --------------------------------------------------
+          # Give Chrome/Zoom time to start
+          # --------------------------------------------------
 
           sleep 30
 
 
-      # ==========================================
-      # Start YouTube Stream
-      # ==========================================
+          # --------------------------------------------------
+          # Check process
+          # --------------------------------------------------
 
-      - name: Start YouTube Stream
+          if kill -0 "$ZOOM_PID" 2>/dev/null; then
 
-        env:
+            echo "Zoom automation is running."
 
-          YOUTUBE_STREAM_KEY: ${{ secrets.YOUTUBE_STREAM_KEY }}
+          else
 
-        run: |
+            echo "Zoom automation stopped."
 
-          if [ -z "$YOUTUBE_STREAM_KEY" ]; then
-            echo "ERROR: YOUTUBE_STREAM_KEY is missing."
+            echo "========== zoom.log =========="
+
+            cat zoom.log || true
+
             exit 1
+
           fi
 
-          echo "Starting FFmpeg..."
+
+      # ======================================================
+      # START YOUTUBE STREAM
+      # ======================================================
+
+      - name: Start YouTube Stream
+        shell: bash
+        run: |
+
+          echo "Starting YouTube Live stream..."
+
+          if [ -z "$YOUTUBE_STREAM_KEY" ]; then
+
+            echo "ERROR: YOUTUBE_STREAM_KEY is missing."
+
+            exit 1
+
+          fi
+
+
+          # --------------------------------------------------
+          # Wait a little more for Zoom
+          # --------------------------------------------------
+
+          sleep 10
+
+
+          # --------------------------------------------------
+          # FFmpeg
+          # --------------------------------------------------
 
           ffmpeg \
+            -hide_banner \
+            -loglevel info \
             -f x11grab \
             -draw_mouse 0 \
             -video_size 1920x1080 \
@@ -200,38 +330,58 @@ sudo apt-get install -y google-chrome-stable
             -c:v libx264 \
             -preset veryfast \
             -tune zerolatency \
-            -b:v 3000k \
-            -maxrate 3000k \
-            -bufsize 6000k \
             -pix_fmt yuv420p \
+            -r 30 \
             -g 60 \
+            -b:v 4500k \
+            -maxrate 4500k \
+            -bufsize 9000k \
             -c:a aac \
             -b:a 128k \
             -ar 44100 \
+            -ac 2 \
             -f flv \
             "rtmp://a.rtmp.youtube.com/live2/${YOUTUBE_STREAM_KEY}"
 
 
-      # ==========================================
-      # Debug Logs
-      # ==========================================
+      # ======================================================
+      # UPLOAD LOGS
+      # ======================================================
 
       - name: Upload Logs
-
         if: always()
-
         uses: actions/upload-artifact@v4
-
         with:
-
-          name: zoom-debug-logs
-
+          name: zoom-youtube-logs
           path: |
-
             zoom.log
-
+            /tmp/xvfb.log
+            /tmp/fluxbox.log
+            /tmp/pulseaudio.log
             /tmp/zoom_current.png
-
-            /tmp/zoom_error.png
-
           if-no-files-found: ignore
+
+
+      # ======================================================
+      # POST SETUP
+      # ======================================================
+
+      - name: Post Setup Node.js
+        if: always()
+        run: |
+
+          echo "Node.js version:"
+          node --version
+
+
+      # ======================================================
+      # COMPLETE
+      # ======================================================
+
+      - name: Complete
+        if: always()
+        run: |
+
+          echo "=========================================="
+          echo "Zoom → YouTube Live workflow finished."
+          echo "=========================================="
