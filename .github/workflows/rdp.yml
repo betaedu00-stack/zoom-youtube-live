@@ -45,9 +45,9 @@ jobs:
       - name: Create RDP User
         shell: powershell
         run: |
-          $password = ConvertTo-SecureString "ZoomRDP@2026!Live" -AsPlainText -Force
+          $password = ConvertTo-SecureString "RdpPass2026!" -AsPlainText -Force
 
-          if (-not (Get-LocalUser -Name "rdpuser" -ErrorAction SilentlyContinue) ) {
+          if (-not (Get-LocalUser -Name "rdpuser" -ErrorAction SilentlyContinue)) {
             New-LocalUser `
               -Name "rdpuser" `
               -Password $password `
@@ -66,7 +66,7 @@ jobs:
           Write-Host ""
           Write-Host "========================================="
           Write-Host " RDP USER     : rdpuser"
-          Write-Host " RDP PASSWORD : ZoomRDP@2026!Live"
+          Write-Host " RDP PASSWORD : RdpPass2026!"
           Write-Host "========================================="
           Write-Host ""
 
