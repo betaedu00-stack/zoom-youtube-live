@@ -66,8 +66,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: 24
 
 
       # ======================================================
@@ -78,7 +77,12 @@ jobs:
         shell: bash
         run: |
 
+          echo "Updating package lists..."
+
           sudo apt-get update
+
+
+          echo "Installing required tools..."
 
           sudo apt-get install -y \
             wget \
@@ -91,14 +95,22 @@ jobs:
             ca-certificates
 
 
-          # --------------------------------------------------
-          # Google Chrome GPG key
-          # --------------------------------------------------
+          # ==================================================
+          # DOWNLOAD GOOGLE CHROME KEY
+          # ==================================================
+
+          echo "Downloading Google Chrome signing key..."
 
           wget -q \
             https://dl.google.com/linux/linux_signing_key.pub \
             -O /tmp/google-chrome-key.pub
 
+
+          # ==================================================
+          # CREATE KEYRING
+          # ==================================================
+
+          echo "Creating Google Chrome keyring..."
 
           sudo gpg \
             --batch \
@@ -109,45 +121,62 @@ jobs:
             /tmp/google-chrome-key.pub
 
 
-          # --------------------------------------------------
-          # Google Chrome repository
-          # --------------------------------------------------
+          # ==================================================
+          # ADD GOOGLE CHROME REPOSITORY
+          # ==================================================
+
+          echo "Adding Google Chrome repository..."
 
           echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
             | sudo tee /etc/apt/sources.list.d/google-chrome.list
 
 
-          # --------------------------------------------------
-          # Install Chrome
-          # --------------------------------------------------
+          # ==================================================
+          # INSTALL GOOGLE CHROME
+          # ==================================================
+
+          echo "Installing Google Chrome..."
 
           sudo apt-get update
 
           sudo apt-get install -y google-chrome-stable
 
 
-          # --------------------------------------------------
-          # Check installations
-          # --------------------------------------------------
+          # ==================================================
+          # CHECK VERSIONS
+          # ==================================================
 
+          echo "=========================================="
+
+          echo "Google Chrome:"
           google-chrome --version
 
+          echo "Node:"
           node --version
 
+          echo "NPM:"
           npm --version
 
+          echo "FFmpeg:"
           ffmpeg -version | head -n 1
+
+          echo "=========================================="
 
 
       # ======================================================
-      # INSTALL DEPENDENCIES
+      # INSTALL NODE DEPENDENCIES
       # ======================================================
 
       - name: Install Dependencies
         shell: bash
         run: |
 
+          echo "Installing Node.js dependencies..."
+
           npm install
+
+
+          echo "Dependencies installed."
 
 
       # ======================================================
@@ -158,9 +187,12 @@ jobs:
         shell: bash
         run: |
 
-          # --------------------------------------------------
-          # Virtual Display
-          # --------------------------------------------------
+          echo "Starting virtual display..."
+
+
+          # ==================================================
+          # Xvfb
+          # ==================================================
 
           Xvfb :99 \
             -screen 0 1920x1080x24 \
@@ -172,17 +204,24 @@ jobs:
           sleep 3
 
 
-          # --------------------------------------------------
-          # Window Manager
-          # --------------------------------------------------
+          # ==================================================
+          # Fluxbox
+          # ==================================================
+
+          echo "Starting window manager..."
 
           fluxbox \
             > /tmp/fluxbox.log 2>&1 &
 
 
-          # --------------------------------------------------
+          sleep 2
+
+
+          # ==================================================
           # PulseAudio
-          # --------------------------------------------------
+          # ==================================================
+
+          echo "Starting PulseAudio..."
 
           pulseaudio \
             --start \
@@ -194,31 +233,39 @@ jobs:
           sleep 3
 
 
-          # --------------------------------------------------
-          # Virtual Audio Sink
-          # --------------------------------------------------
+          # ==================================================
+          # CREATE VIRTUAL AUDIO SINK
+          # ==================================================
+
+          echo "Creating virtual audio sink..."
 
           pactl load-module module-null-sink \
             sink_name=vss \
             sink_properties=device.description=VirtualSink || true
 
 
-          # --------------------------------------------------
-          # Set Virtual Sink as default
-          # --------------------------------------------------
+          # ==================================================
+          # SET DEFAULT AUDIO SINK
+          # ==================================================
 
           pactl set-default-sink vss || true
 
 
-          # --------------------------------------------------
-          # Check display/audio
-          # --------------------------------------------------
+          # ==================================================
+          # CHECK DISPLAY
+          # ==================================================
 
           echo "DISPLAY=$DISPLAY"
 
-          pactl info || true
 
+          echo "=========================================="
+          echo "Audio sinks:"
           pactl list short sinks || true
+
+
+          echo "=========================================="
+          echo "PulseAudio information:"
+          pactl info || true
 
 
       # ======================================================
@@ -229,24 +276,37 @@ jobs:
         shell: bash
         run: |
 
-          echo "Starting Zoom automation..."
+          echo "=========================================="
+          echo "Starting Zoom Automation"
+          echo "=========================================="
 
-          echo "Zoom URL:"
-          echo "$ZOOM_URL"
 
-          echo "Name:"
+          echo "Zoom URL received."
+
+          if [ -z "$ZOOM_URL" ]; then
+
+            echo "ERROR: ZOOM_URL is empty."
+
+            exit 1
+
+          fi
+
+
+          echo "Name field:"
           echo "$NAME"
 
-          echo "Email:"
+
+          echo "Email field:"
           echo "$EMAIL"
+
 
           echo "Chat ID:"
           echo "$CHAT_ID"
 
 
-          # --------------------------------------------------
-          # Start Zoom automation
-          # --------------------------------------------------
+          # ==================================================
+          # START ZOOM.JS
+          # ==================================================
 
           node zoom.js \
             > zoom.log 2>&1 &
@@ -254,21 +314,25 @@ jobs:
 
           ZOOM_PID=$!
 
-          echo "Zoom PID: $ZOOM_PID"
+
+          echo "Zoom process PID: $ZOOM_PID"
+
 
           echo "$ZOOM_PID" > zoom.pid
 
 
-          # --------------------------------------------------
-          # Give Chrome/Zoom time to start
-          # --------------------------------------------------
+          # ==================================================
+          # WAIT FOR ZOOM TO START
+          # ==================================================
+
+          echo "Waiting for Zoom automation..."
 
           sleep 30
 
 
-          # --------------------------------------------------
-          # Check process
-          # --------------------------------------------------
+          # ==================================================
+          # CHECK ZOOM PROCESS
+          # ==================================================
 
           if kill -0 "$ZOOM_PID" 2>/dev/null; then
 
@@ -276,11 +340,16 @@ jobs:
 
           else
 
-            echo "Zoom automation stopped."
+            echo "ERROR: Zoom automation stopped."
 
-            echo "========== zoom.log =========="
+
+            echo "=========================================="
+            echo "ZOOM LOG"
+            echo "=========================================="
+
 
             cat zoom.log || true
+
 
             exit 1
 
@@ -288,14 +357,21 @@ jobs:
 
 
       # ======================================================
-      # START YOUTUBE STREAM
+      # START YOUTUBE LIVE STREAM
       # ======================================================
 
       - name: Start YouTube Stream
         shell: bash
         run: |
 
-          echo "Starting YouTube Live stream..."
+          echo "=========================================="
+          echo "Starting YouTube Live Stream"
+          echo "=========================================="
+
+
+          # ==================================================
+          # CHECK STREAM KEY
+          # ==================================================
 
           if [ -z "$YOUTUBE_STREAM_KEY" ]; then
 
@@ -306,16 +382,24 @@ jobs:
           fi
 
 
-          # --------------------------------------------------
-          # Wait a little more for Zoom
-          # --------------------------------------------------
+          echo "YouTube stream key is available."
+
+
+          # ==================================================
+          # EXTRA WAIT FOR ZOOM
+          # ==================================================
+
+          echo "Waiting for Zoom screen..."
 
           sleep 10
 
 
-          # --------------------------------------------------
-          # FFmpeg
-          # --------------------------------------------------
+          # ==================================================
+          # START FFMPEG
+          # ==================================================
+
+          echo "Starting FFmpeg..."
+
 
           ffmpeg \
             -hide_banner \
@@ -363,23 +447,12 @@ jobs:
 
 
       # ======================================================
-      # POST SETUP
-      # ======================================================
-
-      - name: Post Setup Node.js
-        if: always()
-        run: |
-
-          echo "Node.js version:"
-          node --version
-
-
-      # ======================================================
       # COMPLETE
       # ======================================================
 
       - name: Complete
         if: always()
+        shell: bash
         run: |
 
           echo "=========================================="
