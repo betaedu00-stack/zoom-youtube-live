@@ -60,25 +60,30 @@ jobs:
 
           sudo apt-get update
 
-          sudo apt-get install -y \
-            wget \
-            gnupg \
-            xvfb \
-            ffmpeg \
-            pulseaudio \
-            fluxbox \
-            x11-utils \
-            ca-certificates
+sudo apt-get install -y \
+    wget \
+    gnupg \
+    xvfb \
+    ffmpeg \
+    pulseaudio \
+    fluxbox \
+    x11-utils \
+    ca-certificates
 
-          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub \
-            | sudo gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+wget -q https://dl.google.com/linux/linux_signing_key.pub \
+    -O /tmp/google-chrome-key.pub
 
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-            | sudo tee /etc/apt/sources.list.d/google-chrome.list
+sudo gpg --batch --yes --no-tty \
+    --dearmor \
+    -o /usr/share/keyrings/google-chrome.gpg \
+    /tmp/google-chrome-key.pub
 
-          sudo apt-get update
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+    | sudo tee /etc/apt/sources.list.d/google-chrome.list
 
-          sudo apt-get install -y google-chrome-stable
+sudo apt-get update
+
+sudo apt-get install -y google-chrome-stable
 
 
       # ==========================================
